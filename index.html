@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fretboard Builder — 3D-printable cigar box guitar fretboards</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>🎸 Fretboard Builder</h1>
+  <p class="tagline">
+    Generate a ready-to-print STL fretboard for a cigar box guitar — integrated frets and nut,
+    attached to the neck with <strong>#6 flat-head screws</strong> through countersunk holes at the
+    fret-marker positions. When the strings wear the PLA down, unscrew it, print another, screw it back on.
+  </p>
+</header>
+
+<main>
+  <section class="panel controls">
+    <h2>Your build</h2>
+
+    <label>
+      Strings
+      <select id="strings">
+        <option value="2">2</option>
+        <option value="3" selected>3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+      </select>
+    </label>
+
+    <label>
+      Frets <span id="frets-value" class="value">20</span>
+      <input type="range" id="frets" min="12" max="24" step="1" value="20">
+    </label>
+
+    <label>
+      Scale length
+      <span class="row">
+        <select id="scale-preset">
+          <option value="23">23″ — travel / kids</option>
+          <option value="23.5" selected>23.5″ — CBG</option>
+          <option value="24">24″ — short scale</option>
+          <option value="24.75">24.75″ — Gibson style</option>
+          <option value="25.5">25.5″ — Fender style</option>
+          <option value="custom">Custom…</option>
+        </select>
+        <input type="number" id="scale" value="23.5" min="18" max="30" step="0.05">
+        <span class="unit">in</span>
+      </span>
+    </label>
+
+    <label>
+      Nut width
+      <span class="row">
+        <input type="number" id="nut-width" value="1.5" min="1" max="2.5" step="0.0625">
+        <span class="unit">in</span>
+      </span>
+    </label>
+
+    <label>
+      Width at last fret
+      <span class="row">
+        <input type="number" id="heel-width" value="1.5" min="1.1" max="3" step="0.0625">
+        <span class="unit">in</span>
+      </span>
+    </label>
+
+    <label>
+      Split board for printing
+      <select id="split">
+        <option value="0">No split — one piece</option>
+        <option value="5">Two pieces — split after fret 5</option>
+        <option value="7" selected>Two pieces — split after fret 7</option>
+        <option value="9">Two pieces — split after fret 9</option>
+        <option value="12">Two pieces — split after fret 12</option>
+      </select>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" id="fret-17">
+      Screw hole at the fret 17 marker <span class="hint">(off by default)</span>
+    </label>
+
+    <details class="advanced">
+      <summary>Advanced</summary>
+      <label>
+        Board thickness
+        <span class="row">
+          <input type="number" id="thickness" value="0.2" min="0.14" max="0.31" step="0.01">
+          <span class="unit">in</span>
+        </span>
+      </label>
+      <label>
+        Fret height
+        <span class="row">
+          <input type="number" id="fret-height" value="0.035" min="0.02" max="0.06" step="0.005">
+          <span class="unit">in</span>
+        </span>
+      </label>
+      <label>
+        Board past last fret
+        <span class="row">
+          <input type="number" id="tail" value="0.75" min="0.4" max="2.36" step="0.05">
+          <span class="unit">in</span>
+        </span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="nut-screw" checked>
+        Extra screw hole at the nut end
+      </label>
+      <label class="check">
+        <input type="checkbox" id="tail-screw">
+        Extra screw hole at the tail end
+      </label>
+      <label class="check">
+        <input type="checkbox" id="round-tail" checked>
+        Rounded tail corners — ¼″ radius (fits a routed neck pocket)
+      </label>
+      <label class="check">
+        <input type="checkbox" id="left-handed">
+        Left-handed (reverses the nut slot order)
+      </label>
+    </details>
+
+    <div id="downloads"></div>
+    <p class="filename" id="filename"></p>
+  </section>
+
+  <section class="panel output">
+    <div id="preview-wrap">
+      <div id="preview"></div>
+      <p id="preview-fallback" hidden>
+        The 3D preview isn't available in this browser.
+        STL generation still works — hit Download.
+      </p>
+    </div>
+
+    <div class="readouts">
+      <div><span class="k">Overall size</span><span class="v" id="size-out">—</span></div>
+      <div><span class="k">Screw holes</span><span class="v" id="holes-out">—</span></div>
+      <div><span class="k">Nut slots</span><span class="v" id="slots-out">—</span></div>
+      <div><span class="k">Screws</span><span class="v">#6 × ¾″ flat-head wood screws (82° countersink)</span></div>
+    </div>
+    <p class="warning" id="warnings" hidden></p>
+
+    <details class="fret-table">
+      <summary>Fret positions (measure twice, print once)</summary>
+      <table>
+        <thead><tr><th>Fret</th><th>From nut (in)</th><th>From nut (mm)</th></tr></thead>
+        <tbody id="fret-rows"></tbody>
+      </table>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <p>
+    Print flat-side down, no supports. When the frets wear, the whole board is the wear part:
+    two minutes with a screwdriver and a fresh print and you have a brand-new fret job.
+    See <strong>README.md</strong> in the repo for printing and fitting notes.
+  </p>
+</footer>
+
+<script src="vendor/earcut.min.js"></script>
+<script src="geometry.js"></script>
+<script src="stl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
