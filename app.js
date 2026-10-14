@@ -16,6 +16,7 @@
     nutWidth: $('nut-width'), heelWidth: $('heel-width'),
     split: $('split'), fret17: $('fret-17'), fretMode: $('fret-mode'),
     thickness: $('thickness'), fretHeight: $('fret-height'), tail: $('tail'),
+    slotHeight: $('slot-height'), slotSlope: $('slot-slope'),
     nutScrew: $('nut-screw'), tailScrew: $('tail-screw'), roundTail: $('round-tail'),
     leftHanded: $('left-handed'),
     headstockExt: $('headstock-ext'),
@@ -49,6 +50,8 @@
       thicknessMm: clamp(num(els.thickness, 0.2), 0.14, 0.31) * IN,
       fretHeightMm: clamp(num(els.fretHeight, 0.035), 0.02, 0.06) * IN,
       tailMm: clamp(num(els.tail, 0.75), 0.4, 2.36) * IN,
+      slotHeightMm: clamp(num(els.slotHeight, 0.3), 0.1, 0.8),
+      slotSlopeDeg: clamp(num(els.slotSlope, 7.5), 0, 20),
       nutScrew: els.nutScrew.checked,
       tailScrew: els.tailScrew.checked,
       tailCornerRadiusMm: els.roundTail.checked ? 6.35 : 0,
@@ -90,7 +93,19 @@
 
   function rebuild() {
     var params = readParams();
-    var result = Fretboard.buildFretboard(params, earcut);
+    var result;
+    try {
+      result = Fretboard.buildFretboard(params, earcut);
+    } catch (err) {
+      // The geometry validates its inputs and throws a readable error:
+      // show it and offer no downloads, rather than exporting a
+      // broken STL or dying silently.
+      els.warnings.textContent = '✖ ' + err.message;
+      els.warnings.hidden = false;
+      els.downloads.innerHTML = '';
+      els.filename.textContent = '';
+      return;
+    }
     var meta = result.meta;
     var scaleIn = (params.scaleMm / IN).toFixed(2).replace(/\.?0+$/, '');
     var base = 'fretboard_' + params.strings + 'string_' + params.frets +
@@ -130,6 +145,9 @@
     els.slotsOut.textContent = 'sized per string' +
       (meta.tuningLabel ? ' for ' + meta.tuningLabel : '') + ': ' +
       meta.stringGaugesIn.map(function (g) { return g.toFixed(3).replace('0.', '.') + '″'; }).join(' · ') +
+      (meta.nut ? ' — string undersides sit ' +
+        meta.nut.targetsMm.map(function (t) { return t.toFixed(2); }).join('/') +
+        ' mm over fret 1 (low→high)' : '') +
       (params.leftHanded ? ' — left-handed layout' : '');
 
     if (meta.warnings.length) {
@@ -152,7 +170,8 @@
 
   // ------------------------------------------------------------------
   // 3D preview — dependency-free canvas renderer.
-  // Drag to orbit, scroll to zoom, double-click to reset the view.
+  // Drag to orbit (all the way under), right-drag or shift-drag to
+  // pan, scroll to zoom, double-click to reset the view.
   // ------------------------------------------------------------------
   function createPreview(container, fallbackEl) {
     var canvas = document.createElement('canvas');
@@ -160,7 +179,7 @@
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     canvas.style.cursor = 'grab';
-    canvas.title = 'Drag to spin · scroll to zoom · double-click to reset';
+    canvas.title = 'Drag to spin · right-drag to pan · scroll to zoom · double-click to reset';
     container.appendChild(canvas);
     var ctx = null;
     try { ctx = canvas.getContext && canvas.getContext('2d'); } catch (e) { ctx = null; }
@@ -174,6 +193,7 @@
     var groupNormals = {}; // per-group smoothed vertex normals
     var center = [0, 0, 0], radius = 1;
     var az = -0.6, el = 0.62, zoom = 1;
+    var panX = 0, panY = 0; // screen-space pan offset, canvas pixels
 
     // Smooth (per-vertex) normals for shading: at each vertex, average
     // the normals of the faces meeting there that point within ~30
@@ -269,8 +289,12 @@
       // then the raised features (frets, nut, extension). Within a layer
       // nothing overlaps in plan, so the painter sort is reliable; a
       // single mixed sort is NOT (a fret and the face beneath it have no
-      // consistent order, which drew frets as broken dashes).
-      var layerNames = ['endWalls', 'body', 'recess', 'features'];
+      // consistent order, which drew frets as broken dashes). Viewed
+      // from underneath (el < 0) the order reverses, so the far side
+      // paints first there too.
+      var layerNames = el >= 0
+        ? ['endWalls', 'body', 'recess', 'features']
+        : ['features', 'recess', 'body', 'endWalls'];
       for (var li = 0; li < layerNames.length; li++) {
         var t = tris[layerNames[li]];
         var vn = groupNormals[layerNames[li]];
@@ -300,8 +324,8 @@
           var shade = 0.42 + 0.58 * Math.max(0, nx * lx + ny * ly + nz * lz);
           var px = [], py = [], depth = 0, vsh = [];
           for (j = 0; j < 3; j++) {
-            px.push(W / 2 + X[j] * scale);
-            py.push(H / 2 - Z[j] * scale);
+            px.push(W / 2 + X[j] * scale + panX);
+            py.push(H / 2 - Z[j] * scale + panY);
             depth += -Y[j]; // toward the viewer
             if (vn) {
               var mx = vn[i + j * 3], my = vn[i + j * 3 + 1], mz = vn[i + j * 3 + 2];
@@ -367,29 +391,52 @@
       }
     }
 
-    var dragging = false, lastX = 0, lastY = 0;
+    var dragMode = null, lastX = 0, lastY = 0; // 'orbit' | 'pan'
     canvas.addEventListener('pointerdown', function (e) {
-      dragging = true; lastX = e.clientX; lastY = e.clientY;
-      canvas.style.cursor = 'grabbing';
+      // right button (or shift+drag) pans; left button orbits
+      dragMode = (e.button === 2 || e.shiftKey) ? 'pan' : 'orbit';
+      lastX = e.clientX; lastY = e.clientY;
+      canvas.style.cursor = dragMode === 'pan' ? 'move' : 'grabbing';
       if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener('pointermove', function (e) {
-      if (!dragging) return;
-      az += (e.clientX - lastX) * 0.008;
-      el = clamp(el + (e.clientY - lastY) * 0.008, 0.08, 1.35);
+      if (!dragMode) return;
+      var dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
+      if (dragMode === 'pan') {
+        // pointer deltas are CSS pixels; pan offsets are canvas pixels
+        var k = canvas.clientWidth ? canvas.width / canvas.clientWidth : 1;
+        panX += dx * k;
+        panY += dy * k;
+      } else {
+        az += dx * 0.008;
+        // nearly pole to pole (±86°), so the underside is fully reachable
+        el = clamp(el + dy * 0.008, -1.5, 1.5);
+      }
       draw();
     });
-    function endDrag() { dragging = false; canvas.style.cursor = 'grab'; }
+    function endDrag() { dragMode = null; canvas.style.cursor = 'grab'; }
     canvas.addEventListener('pointerup', endDrag);
     canvas.addEventListener('pointercancel', endDrag);
+    canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     canvas.addEventListener('wheel', function (e) {
       e.preventDefault();
-      zoom = clamp(zoom * (e.deltaY < 0 ? 1.1 : 0.9), 0.5, 8);
+      // Zoom toward the cursor: adjust the pan by the same factor so
+      // the board point under the mouse stays under the mouse.
+      var rect = canvas.getBoundingClientRect();
+      var k = rect.width ? canvas.width / rect.width : 1;
+      var mx = (e.clientX - rect.left) * k, my = (e.clientY - rect.top) * k;
+      var newZoom = clamp(zoom * (e.deltaY < 0 ? 1.1 : 0.9), 0.5, 8);
+      var r = newZoom / zoom;
+      if (r !== 1) {
+        panX = mx - canvas.width / 2 - (mx - canvas.width / 2 - panX) * r;
+        panY = my - canvas.height / 2 + (canvas.height / 2 + panY - my) * r;
+        zoom = newZoom;
+      }
       draw();
     }, { passive: false });
     canvas.addEventListener('dblclick', function () {
-      az = -0.6; el = 0.62; zoom = 1;
+      az = -0.6; el = 0.62; zoom = 1; panX = 0; panY = 0;
       draw();
     });
     window.addEventListener('resize', resize);
@@ -419,7 +466,7 @@
     els.scalePreset.value = 'custom';
     rebuild();
   });
-  ['frets', 'nut-width', 'heel-width', 'thickness', 'fret-height', 'tail'].forEach(function (id) {
+  ['frets', 'nut-width', 'heel-width', 'thickness', 'fret-height', 'tail', 'slot-height', 'slot-slope'].forEach(function (id) {
     $(id).addEventListener('input', rebuild);
   });
   els.nutScrew.addEventListener('change', rebuild);

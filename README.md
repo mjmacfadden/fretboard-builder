@@ -18,9 +18,16 @@ case, and a worn board becomes a fresh fret job for a few cents of filament.
   has a **rounded crown** (a half-ellipse profile, like real fret wire), so
   strings roll over it instead of catching a sharp rectangular edge. The
   fret **ends are rounded over** too, like filed fret ends on a real guitar.
-- The **nut** is printed in place too, with one slot per string — and each
-  slot is sized for its string (width = gauge + a hair of clearance, floor
-  ≈60% of the string's diameter down). Gauges assumed: 3-string **GDg**
+- The **nut** is printed in place too, sitting on the headstock side of
+  the scale's zero point, so fret distances are measured from the face
+  the strings actually leave from. Each slot is sized for its string
+  (width = gauge + a hair of clearance), and its floor is set by action,
+  not by depth: the string's underside sits a target height above the
+  first fret's crown (0.30 mm at the treble side, ramping up to 0.50 mm
+  at the bass side — adjustable under *Advanced*). Each floor also
+  slopes down toward the headstock from its high point at the nut's
+  fret-side face, so the string's break point is exactly at the face.
+  Gauges assumed: 3-string **GDg**
   (.042/.032/.024), 4-string **GDgB** (adds a .017), 6-string standard
   **EADGBE** (.046–.010). A **Left-handed** option under *Advanced* mirrors
   the slot order. The nut's left and right ends are rounded over (the
@@ -37,7 +44,7 @@ case, and a worn board becomes a fresh fret job for a few cents of filament.
   scales), that hole is skipped and the app tells you.
 - Choose strings (2–6), frets (12–24), scale length, nut and heel width, and
   fine-tune thickness, fret height and tail length under *Advanced*.
-- A full-size board is ~428 mm long at the default 23.5″ CBG scale — longer
+- A full-size board is ~433 mm long at the default 23.5″ CBG scale — longer
   than most print beds — so by
   default the board is **split into two printable pieces just past the fret 7
   ridge** (the ridge hides the seam; both pieces screw to the same neck,

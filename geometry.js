@@ -175,6 +175,37 @@
     return orientClosed(t);
   }
 
+  /**
+   * Same loft, transposed: a convex profile in the (x, z) plane lofted
+   * along y through sections [{y, s, dz}], scaled about (cx, zBase).
+   * Used for the nut's end segments, whose side profile carries the
+   * rounded-over end as a true arc.
+   */
+  function loftProfileY(profile, cx, zBase, sections) {
+    var t = [];
+    var n = profile.length;
+    var secs = sections.map(function (sec) {
+      return profile.map(function (p) {
+        return [cx + (p[0] - cx) * sec.s, sec.y, zBase + (p[1] - zBase) * sec.s + (sec.dz || 0)];
+      });
+    });
+    var i, j;
+    var first = secs[0], last = secs[secs.length - 1];
+    for (j = 1; j < n - 1; j++) {
+      pushTri(t, first[0], first[j], first[j + 1]);
+      pushTri(t, last[0], last[j + 1], last[j]);
+    }
+    for (i = 0; i < secs.length - 1; i++) {
+      for (j = 0; j < n; j++) {
+        var a0 = secs[i][j], a1 = secs[i][(j + 1) % n];
+        var b0 = secs[i + 1][j], b1 = secs[i + 1][(j + 1) % n];
+        pushTri(t, a0, b0, b1);
+        pushTri(t, a0, b1, a1);
+      }
+    }
+    return orientClosed(t);
+  }
+
   // ---------------------------------------------------------------------
   // Board body (with screw holes)
   // ---------------------------------------------------------------------
@@ -223,7 +254,12 @@
     });
     denseYs = denseYs.filter(function (y, idx) {
       if (idx === 0 || idx === denseYs.length - 1) return true;
-      return !sorted.some(function (h) { return Math.abs(y - h.y) <= radius + 0.6; });
+      // NOTE: the span uses the head radius (the larger of the two face
+      // radii) regardless of which face is being built, so the top and
+      // bottom faces end up with IDENTICAL station lists — their
+      // boundaries must match vertex for vertex for the walls to share
+      // edges with both (watertightness).
+      return !sorted.some(function (h) { return Math.abs(y - h.y) <= SCREW.headRadius + 0.6; });
     });
 
     var events = [];
@@ -253,6 +289,20 @@
         chainKind.push('arc', 'arc');
       }
     });
+
+    // The face's boundary, in order: the side sequences are the chains'
+    // endpoints, the end sequences are the first/last chains. The side
+    // and end walls are built from THESE points, so every wall edge is
+    // shared with a face edge — no T-junctions, no open edges.
+    function withZ(chain) {
+      return chain.map(function (pt) { return [pt[0], pt[1], zOf(pt[0], pt[1])]; });
+    }
+    var boundary = {
+      left: withZ(chains.map(function (ch) { return ch[0]; })),
+      right: withZ(chains.map(function (ch) { return ch[ch.length - 1]; })),
+      first: withZ(chains[0]),
+      last: withZ(chains[chains.length - 1])
+    };
 
     var tris = [];
     for (var c = 0; c < chains.length - 1; c++) {
@@ -284,7 +334,10 @@
           [coords[idx[i + 2] * 2], coords[idx[i + 2] * 2 + 1], zOf(coords[idx[i + 2] * 2], coords[idx[i + 2] * 2 + 1])]);
       }
     }
-    return forceNormals(tris, function (n) { return up ? n[2] > 0 : n[2] < 0; });
+    return {
+      tris: forceNormals(tris, function (n) { return up ? n[2] > 0 : n[2] < 0; }),
+      boundary: boundary
+    };
   }
 
   /** Ring strip between two circles (used for countersink cone + hole wall). */
@@ -316,47 +369,45 @@
    * four side walls (the two cut faces become the piece's end walls), and
    * the cone + hole wall for each screw hole inside the range.
    */
-  function boardBody(p, holes, widthAt, y0, y1, stations, earcut, outline, zTopAt) {
+  function boardBody(p, holes, widthAt, y0, y1, stations, earcut, zTopAt) {
     var T = p.thicknessMm;
     var curved = !!(p.radiusMm || 0);
     var tris = [];
 
     // top + bottom faces (top follows the radius curve when radiused;
     // the bottom stays flat for printing and neck contact)
-    tris = tris.concat(flatFace(holes, SCREW.headRadius, zTopAt, true, widthAt, y1, stations, earcut));
-    tris = tris.concat(flatFace(holes, SCREW.clearanceRadius, 0, false, widthAt, y1, stations, earcut));
+    var topFace = flatFace(holes, SCREW.headRadius, zTopAt, true, widthAt, y1, stations, earcut);
+    // the bottom z is a function too (returning 0) so its station
+    // chains sample across the width exactly like the top face's —
+    // the end walls are built from those chain points, and a 2-point
+    // bottom chain would leave the walls' subdivided bottom edges
+    // unmatched (open edges at every piece end)
+    var botFace = flatFace(holes, SCREW.clearanceRadius, function () { return 0; }, false, widthAt, y1, stations, earcut);
+    tris = tris.concat(topFace.tris, botFace.tris);
 
-    // side walls (outline is a closed perimeter polyline; the last point
-    // wraps back to the first). Wall tops follow zTopAt; end edges
-    // (constant y) are subdivided at the face-chain sample points so
-    // the wall top and the face edge trace the same curve. End walls
-    // are returned separately: at a split seam the two pieces' end
-    // walls are coincident and internal, and the preview must paint
-    // them UNDER the top faces or they leak through as dark shards.
-    var endWalls = [];
-    for (var e = 0; e < outline.length; e++) {
-      var A = outline[e], B = outline[(e + 1) % outline.length];
-      var pts = [A];
-      if (curved && A[1] === B[1]) {
-        for (var fi = 1; fi < CHAIN_FRACS.length - 1; fi++) {
-          var f = (CHAIN_FRACS[fi] + 1) / 2;
-          pts.push([A[0] + (B[0] - A[0]) * f, A[1]]);
-        }
-      }
-      pts.push(B);
+    // Side and end walls, built from the top face's OWN boundary
+    // vertices (returned by flatFace), so every wall edge coincides
+    // with a face edge: the mesh is watertight — no T-junctions where
+    // a long wall edge passes a face vertex. End walls are returned
+    // separately: at a split seam the two pieces' end walls are
+    // coincident and internal, and the preview must paint them UNDER
+    // the top faces or they leak through as dark shards.
+    function outward(n, gx, gy) {
+      // outward = away from the piece centre (0, (y0+y1)/2)
+      return n[0] * gx + n[1] * (gy - (y0 + y1) / 2) > 0;
+    }
+    function wallStrip(pts) {
+      var w = [];
       for (var sg = 0; sg < pts.length - 1; sg++) {
         var P0 = pts[sg], P1 = pts[sg + 1];
-        var wall = [];
-        pushTri(wall, [P0[0], P0[1], 0], [P1[0], P1[1], 0], [P1[0], P1[1], zTopAt(P1[0])]);
-        pushTri(wall, [P0[0], P0[1], 0], [P1[0], P1[1], zTopAt(P1[0])], [P0[0], P0[1], zTopAt(P0[0])]);
-        forceNormals(wall, function (n, gx, gy) {
-          // outward = away from the piece centre (0, (y0+y1)/2)
-          return n[0] * gx + n[1] * (gy - (y0 + y1) / 2) > 0;
-        });
-        if (A[1] === B[1]) endWalls = endWalls.concat(wall);
-        else tris = tris.concat(wall);
+        if (P0[0] === P1[0] && P0[1] === P1[1]) continue; // degenerate
+        pushTri(w, [P0[0], P0[1], 0], [P1[0], P1[1], 0], [P1[0], P1[1], P1[2]]);
+        pushTri(w, [P0[0], P0[1], 0], [P1[0], P1[1], P1[2]], [P0[0], P0[1], P0[2]]);
       }
+      return forceNormals(w, outward);
     }
+    tris = tris.concat(wallStrip(topFace.boundary.left), wallStrip(topFace.boundary.right));
+    var endWalls = wallStrip(topFace.boundary.first).concat(wallStrip(topFace.boundary.last));
 
     // countersink cone + straight hole wall for each screw hole —
     // returned separately ('recess') so the preview can paint them as
@@ -390,7 +441,12 @@
    *   radiusMm (fretboard radius across the width; 0 = flat. The bottom
    *   stays flat; frets, nut and the headstock extension follow the
    *   curve; thickness is measured at the centerline),
-   *   nutHeightMm, nutDepthMm, stringGaugesIn (nut slot gauges, low->high),
+   *   nutHeightMm (minimum nut height), nutDepthMm, slotHeightMm (target
+   *   height of the treble string's underside above the 1st fret crown at
+   *   the nut face; bass strings ramp up to +0.2mm, capped at 0.5mm),
+   *   slotSlopeDeg (slot floors slope down toward the headstock at this
+   *   angle from their high point at the fret-side face; default 7.5),
+   *   stringGaugesIn (nut slot gauges, low->high),
    *   leftHanded (bool: mirror the nut slot order for a left-handed build),
    *   splitAfterFret (0 = one piece; N = two pieces, split just past fret N),
    *   fretSteps (semitone classes that get a ridge; null = chromatic),
@@ -401,6 +457,64 @@
    * Returns { triangles (all pieces combined), pieces: [{y0, y1, lengthMm,
    * triangles}], meta }.
    */
+  /**
+   * Reject parameters the geometry can't honour, with a clear error —
+   * better to fail loudly here than to emit NaN coordinates and a
+   * broken STL. Ranges are generous (well past the UI's limits); the
+   * UI surfaces the message instead of downloading anything.
+   */
+  function validateParams(p) {
+    function num(name, v) {
+      if (typeof v !== 'number' || !Number.isFinite(v)) {
+        throw new Error('Invalid ' + name + ': expected a finite number, got ' + String(v));
+      }
+    }
+    function range(name, v, lo, hi) {
+      num(name, v);
+      if (v < lo || v > hi) {
+        throw new Error('Invalid ' + name + ': ' + v + ' is outside the supported range ' + lo + '–' + hi);
+      }
+    }
+    function intRange(name, v, lo, hi) {
+      num(name, v);
+      if (!Number.isInteger(v) || v < lo || v > hi) {
+        throw new Error('Invalid ' + name + ': expected a whole number from ' + lo + ' to ' + hi + ', got ' + v);
+      }
+    }
+    range('scaleMm', p.scaleMm, 100, 2000);
+    intRange('strings', p.strings, 1, 6);
+    intRange('frets', p.frets, 1, 36);
+    range('nutWidthMm', p.nutWidthMm, 10, 150);
+    range('heelWidthMm', p.heelWidthMm, 10, 200);
+    range('thicknessMm', p.thicknessMm, 1, 25);
+    range('fretHeightMm', p.fretHeightMm, 0, 3);
+    range('tailMm', p.tailMm, 0, 300);
+    range('nutHeightMm', p.nutHeightMm, 0.5, 10);
+    range('nutDepthMm', p.nutDepthMm, 2, 15);
+    range('slotHeightMm', p.slotHeightMm, 0.05, 1);
+    range('slotSlopeDeg', p.slotSlopeDeg, 0, 20);
+    range('tailCornerRadiusMm', p.tailCornerRadiusMm, 0, 25);
+    range('headstockExtMm', p.headstockExtMm, 0, 100);
+    range('radiusMm', p.radiusMm, 0, 5000);
+    if (p.radiusMm > 0 && p.radiusMm < 75) {
+      throw new Error('Invalid radiusMm: ' + p.radiusMm + ' is too tight — minimum 75, or 0 for a flat board');
+    }
+    range('fretBaseWidthMm', p.fretBaseWidthMm, 0.5, 8);
+    intRange('splitAfterFret', p.splitAfterFret, 0, 36);
+    if (p.stringGaugesIn != null) {
+      if (!Array.isArray(p.stringGaugesIn) || p.stringGaugesIn.length === 0) {
+        throw new Error('Invalid stringGaugesIn: expected a non-empty array of string gauges (inches)');
+      }
+      p.stringGaugesIn.forEach(function (g, i) { range('stringGaugesIn[' + i + ']', g, 0.005, 0.1); });
+    }
+    if (p.fretSteps != null && !Array.isArray(p.fretSteps)) {
+      throw new Error('Invalid fretSteps: expected an array of semitone classes, or null for chromatic');
+    }
+    if (p.skipMarkers != null && !Array.isArray(p.skipMarkers)) {
+      throw new Error('Invalid skipMarkers: expected an array of fret numbers');
+    }
+  }
+
   function buildFretboard(params, earcut) {
     var p = Object.assign({
       thicknessMm: 5,
@@ -413,6 +527,8 @@
       radiusMm: 0,
       leftHanded: false,
       nutHeightMm: 2.0,
+      slotHeightMm: 0.3,
+      slotSlopeDeg: 7.5,
       nutDepthMm: 5,
       stringGaugesIn: null,
       fretBaseWidthMm: 2.4,
@@ -420,6 +536,7 @@
       fretSteps: null,
       skipMarkers: [17]
     }, params);
+    validateParams(p);
 
     var warnings = [];
     var distances = [];
@@ -434,7 +551,10 @@
     var length = lastFretY + p.tailMm;
 
     function widthAt(y) {
-      return p.nutWidthMm + (p.heelWidthMm - p.nutWidthMm) * (y / lastFretY);
+      // y < 0 is the board's extension under the nut (headstock side of
+      // the scale zero): the width stays at the nut width there rather
+      // than extrapolating the taper past the nut.
+      return p.nutWidthMm + (p.heelWidthMm - p.nutWidthMm) * (Math.max(y, 0) / lastFretY);
     }
 
     // --- fretboard radius ------------------------------------------------
@@ -502,13 +622,19 @@
           p.splitAfterFret + ' to split after.');
       }
     }
-    var ranges = splitY === null ? [[0, length]] : [[0, splitY], [splitY, length]];
+    // The board blank starts nutDepthMm BEFORE the scale zero: the nut
+    // sits on the headstock side of y=0, so its fret-side face — the
+    // point the strings actually leave from — is exactly at y=0 and
+    // every fret distance is measured from the true break point.
+    var boardStart = -p.nutDepthMm;
+    var ranges = splitY === null ? [[boardStart, length]] : [[boardStart, splitY], [splitY, length]];
 
     var embed = 0.6;
     var groupBody = [], groupEndWalls = [], groupRecess = [], groupFeatures = [];
     var wn = p.nutWidthMm;
     var gauges = p.stringGaugesIn || STRING_GAUGES[p.strings] || STRING_GAUGES[3];
     var coneDepth = 0;
+    var nutInfo = null;
     var tris = [];
     var pieces = [];
     // Rounded tail corners (last piece only), clamped to fit the board.
@@ -534,7 +660,6 @@
       // the same boundary points.
       var r = pieceIdx === ranges.length - 1 ? cornerR : 0;
       var wFn = widthAt;
-      var outline;
       if (r > 0) {
         var cx = widthAt(length) / 2 - r;
         wFn = function (y) {
@@ -547,28 +672,9 @@
           stations.push(length - r + r * Math.sin((k * Math.PI) / 8));
         });
         stations.push(length - r);
-        outline = [
-          [-widthAt(y0) / 2, y0], [widthAt(y0) / 2, y0],
-          [widthAt(length - r) / 2, length - r]
-        ];
-        [1, 2, 3, 4].forEach(function (k) {
-          var a = (k * Math.PI) / 8;
-          outline.push([cx + r * Math.cos(a), length - r + r * Math.sin(a)]);
-        });
-        outline.push([-cx, length]);
-        [3, 2, 1].forEach(function (k) {
-          var a2 = (k * Math.PI) / 8;
-          outline.push([-(cx + r * Math.cos(a2)), length - r + r * Math.sin(a2)]);
-        });
-        outline.push([-widthAt(length - r) / 2, length - r]);
-      } else {
-        outline = [
-          [-widthAt(y0) / 2, y0], [widthAt(y0) / 2, y0],
-          [widthAt(y1) / 2, y1], [-widthAt(y1) / 2, y1]
-        ];
       }
 
-      var body = boardBody(p, pieceHoles, wFn, y0, y1, stations, earcut, outline, zTopAt);
+      var body = boardBody(p, pieceHoles, wFn, y0, y1, stations, earcut, zTopAt);
       coneDepth = body.coneDepth;
       var ptris = body.tris.concat(body.endWalls, body.recess);
       groupBody = groupBody.concat(body.tris);
@@ -604,19 +710,21 @@
         // does NOT taper away to a point.
         var endLen = Math.min(1.0, half * 0.5);
         var full = half - endLen; // half-width of the full-height zone
-        var sections = [
-          { x: -half, s: 0.5 },
-          { x: -half + endLen * 0.5, s: 0.8 },
-          { x: -full, s: 1 }
-        ];
+        // Cosine-eased scale steps so the end dome blends smoothly
+        // instead of terracing in two big jumps (0.5 -> 0.8 -> 1).
+        var sections = [];
+        var ek, efr;
+        for (ek = 0; ek <= 5; ek++) {
+          efr = ek / 5;
+          sections.push({ x: -half + endLen * efr, s: 1 - 0.5 * Math.cos(efr * Math.PI / 2) });
+        }
         [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75].forEach(function (fr) {
           sections.push({ x: fr * full, s: 1 });
         });
-        sections.push(
-          { x: full, s: 1 },
-          { x: half - endLen * 0.5, s: 0.8 },
-          { x: half, s: 0.5 }
-        );
+        for (ek = 5; ek >= 0; ek--) {
+          efr = ek / 5;
+          sections.push({ x: half - endLen * efr, s: 1 - 0.5 * Math.cos(efr * Math.PI / 2) });
+        }
         // Each section drops by the radius sag at its x, so the crown
         // stands fretHeightMm proud of the LOCAL surface everywhere.
         sections.forEach(function (sec) { sec.dz = -sagAt(sec.x); });
@@ -625,12 +733,39 @@
 
       // --- integrated nut with string slots (first piece only) ---------
       // Each slot is sized for its string: width = gauge + a hair of
-      // clearance, floor ~60% of the string's diameter below the nut top
-      // (so roughly half the string sits in the slot, like a filed nut).
-      // The nut is built as a row of segment boxes alternating raised
-      // material and slot floors.
+      // clearance. The slot FLOOR is set from a target action: how high
+      // the string's underside sits above the first fret's crown,
+      // measured at the nut's fret-side face. Bass strings sit highest,
+      // treble strings lowest — slotHeightMm is the treble target and
+      // the bass target runs up to 0.2mm higher (capped at 0.5mm). The
+      // nut top then follows from the floors: each string sits ~60% of
+      // its diameter down in its slot, and the nut is never shorter
+      // than nutHeightMm. The nut is built as a row of segment boxes
+      // alternating raised material and slot floors.
       if (pieceIdx === 0) {
+        var nStr = p.strings;
+        var trebleTarget = p.slotHeightMm;
+        var bassTarget = Math.min(0.5, p.slotHeightMm + 0.2);
+        function slotTarget(j) { // j: string index, low -> high
+          if (nStr <= 1) return trebleTarget;
+          return bassTarget + (trebleTarget - bassTarget) * (j / (nStr - 1));
+        }
+        function slotFloor(j) {
+          // never below the first fret's crown (+ a hair for safety)
+          return Math.max(p.thicknessMm + p.fretHeightMm + slotTarget(j),
+            p.thicknessMm + p.fretHeightMm + 0.02);
+        }
         var nutTop = p.thicknessMm + p.nutHeightMm;
+        var nutTargets = [], nutFloors = [];
+        if (nStr > 0) {
+          for (var gi = 0; gi < nStr; gi++) {
+            var gDia = (gauges[gi] || 0.024) * 25.4;
+            nutTargets.push(slotTarget(gi));
+            nutFloors.push(slotFloor(gi));
+            nutTop = Math.max(nutTop, slotFloor(gi) + 0.6 * gDia);
+          }
+        }
+        nutInfo = { topMm: nutTop, targetsMm: nutTargets, floorsMm: nutFloors };
         if (p.strings > 0) {
           var margin = Math.max(3.2, wn * 0.09);
           var spread = wn - margin * 2;
@@ -651,48 +786,102 @@
           stringX.forEach(function (x, si) {
             // Gauges run low->high. On a right-handed board the thick
             // strings sit at the +x side of the nut, so the slot order is
-            // reversed; the left-handed option restores low-at--x.
-            var g = p.leftHanded ? gauges[si] : gauges[p.strings - 1 - si];
+            // reversed; the left-handed option restores low-at--x. The
+            // gauge index j follows the STRING (not the slot position),
+            // so the slot-floor target ramp tracks pitch.
+            var j = p.leftHanded ? si : p.strings - 1 - si;
+            var g = gauges[j];
             var diaMm = (g || 0.024) * 25.4;
             var w = diaMm + 0.1;
-            var depth = Math.min(Math.max(0.6 * diaMm, 0.35), p.nutHeightMm - 0.3);
             segs.push({ x0: cursor, x1: x - w / 2, top: nutTop });
-            segs.push({ x0: x - w / 2, x1: x + w / 2, top: nutTop - depth });
+            segs.push({ x0: x - w / 2, x1: x + w / 2, top: slotFloor(j), slot: true, j: j });
             cursor = x + w / 2;
           });
           segs.push({ x0: cursor, x1: wn / 2, top: nutTop });
         } else {
           segs = [{ x0: -wn / 2, x1: wn / 2, top: nutTop }];
         }
-        // Emit the nut segments as boxes. The two END segments get a
-        // round-over at their outer face — a 1.2mm radius stepped in
-        // 0.3mm slabs — so the nut's left and right ends can't catch
-        // or cut a hand sliding up the neck. The long front/back edges
-        // stay square, and slot floors are exact. On a radiused board
-        // each segment is sliced into <=3mm sub-boxes whose tops follow
-        // the curve (so slot depth is constant at every string), and
-        // the nut's base reaches deeper so its corners stay buried.
+        // Emit the nut segments. The two END segments get a round-over
+        // at their outer face — a true 1.2mm radius carried in the
+        // segment's side profile and lofted along the nut's depth — so
+        // the nut's left and right ends can't catch or cut a hand
+        // sliding up the neck. The long front/back edges stay square,
+        // and slot floors are exact boxes. On a radiused board each
+        // segment is sliced into <=3mm sub-boxes whose tops follow the
+        // curve (so slot depth is constant at every string), and the
+        // nut's base reaches deeper so its corners stay buried.
         var nutBottom = p.thicknessMm - embed - sagAt(wn / 2);
-        var ROLL_R = 1.2, ROLL_STEP = 0.3;
+        var ROLL_R = 1.2;
+        function rolledProfile(x0, x1, top, roll) {
+          var prof = [[x0, nutBottom], [x1, nutBottom]];
+          var a, th;
+          if (roll === 'R' || roll === 'LR') {
+            prof.push([x1, top - ROLL_R]);
+            for (a = 15; a < 90; a += 15) {
+              th = (a * Math.PI) / 180;
+              prof.push([x1 - ROLL_R + ROLL_R * Math.cos(th), top - ROLL_R + ROLL_R * Math.sin(th)]);
+            }
+            prof.push([x1 - ROLL_R, top]);
+          } else {
+            prof.push([x1, top]);
+          }
+          if (roll === 'L' || roll === 'LR') {
+            prof.push([x0 + ROLL_R, top]);
+            for (a = 105; a < 180; a += 15) {
+              th = (a * Math.PI) / 180;
+              prof.push([x0 + ROLL_R + ROLL_R * Math.cos(th), top - ROLL_R + ROLL_R * Math.sin(th)]);
+            }
+            prof.push([x0, top - ROLL_R]);
+          } else if (roll === 'R') {
+            prof.push([x0, top]); // close the top edge (the L block does it otherwise)
+          }
+          return prof;
+        }
         function emitBox(x0, x1, top, roll) {
-          if (!roll || x1 - x0 < ROLL_R + 0.6) {
-            ptris = ptris.concat(box(x0, x1, 0, p.nutDepthMm, nutBottom, top));
+          var need = roll === 'LR' ? 2 * ROLL_R + 0.6 : ROLL_R + 0.6;
+          if (!roll || x1 - x0 < need) {
+            ptris = ptris.concat(box(x0, x1, -p.nutDepthMm, 0, nutBottom, top));
             return;
           }
-          var n = Math.round(ROLL_R / ROLL_STEP);
-          var from = roll === 'L' ? x0 : x1 - ROLL_R;
-          for (var i = 0; i < n; i++) {
-            var sx0 = from + (ROLL_R * i) / n, sx1 = from + (ROLL_R * (i + 1)) / n;
-            var d = roll === 'L' ? (sx0 + sx1) / 2 - x0 : x1 - (sx0 + sx1) / 2;
-            var sz = top - ROLL_R + Math.sqrt(Math.max(0, ROLL_R * ROLL_R - (ROLL_R - d) * (ROLL_R - d)));
-            ptris = ptris.concat(box(sx0, sx1, 0, p.nutDepthMm, nutBottom, sz));
+          ptris = ptris.concat(loftProfileY(
+            rolledProfile(x0, x1, top, roll), (x0 + x1) / 2, nutBottom,
+            [{ y: -p.nutDepthMm, s: 1 }, { y: 0, s: 1 }]));
+        }
+        // Emit one slot as a prism whose top — the slot floor — slopes
+        // DOWN toward the headstock: highest exactly at the fret-side
+        // face (y=0, the scale zero), so the string's only contact
+        // point, its break point, is pinned to the face. The drop over
+        // the nut depth is tan(slope) x depth, clamped so at least
+        // 0.3mm of nut always remains under the slot. Floors are
+        // lofted with shared vertices, keeping the mesh watertight.
+        var nutFloorsBack = [];
+        function emitSlot(x0, x1, floor) {
+          var drop = Math.min(
+            Math.tan((p.slotSlopeDeg * Math.PI) / 180) * p.nutDepthMm,
+            floor - (nutBottom + 0.3));
+          if (drop < 0) drop = 0;
+          var profile = [
+            [-p.nutDepthMm, nutBottom], [0, nutBottom],
+            [0, floor], [-p.nutDepthMm, floor - drop]
+          ];
+          var steps = Math.max(1, Math.ceil((x1 - x0) / 3));
+          for (var st = 0; st < steps; st++) {
+            var bx0 = x0 + ((x1 - x0) * st) / steps;
+            var bx1 = x0 + ((x1 - x0) * (st + 1)) / steps;
+            var dz = -sagAt((bx0 + bx1) / 2);
+            ptris = ptris.concat(loftProfileX(profile, 0, 0, [
+              { x: bx0, s: 1, dz: dz }, { x: bx1, s: 1, dz: dz }
+            ]));
           }
-          if (roll === 'L') ptris = ptris.concat(box(x0 + ROLL_R, x1, 0, p.nutDepthMm, nutBottom, top));
-          else ptris = ptris.concat(box(x0, x1 - ROLL_R, 0, p.nutDepthMm, nutBottom, top));
+          return floor - drop;
         }
         segs.forEach(function (s, si) {
           if (s.x1 - s.x0 <= 0.01) return;
-          var roll = si === 0 ? 'L' : si === segs.length - 1 ? 'R' : null;
+          if (s.slot) {
+            nutFloorsBack[s.j] = emitSlot(s.x0, s.x1, s.top);
+            return;
+          }
+          var roll = segs.length === 1 ? 'LR' : si === 0 ? 'L' : si === segs.length - 1 ? 'R' : null;
           if (!radiusR) {
             emitBox(s.x0, s.x1, s.top, roll);
             return;
@@ -702,10 +891,13 @@
             var bx0 = s.x0 + ((s.x1 - s.x0) * st) / steps;
             var bx1 = s.x0 + ((s.x1 - s.x0) * (st + 1)) / steps;
             var bTop = s.top - sagAt((bx0 + bx1) / 2);
-            emitBox(bx0, bx1, bTop,
-              st === 0 && roll === 'L' ? 'L' : st === steps - 1 && roll === 'R' ? 'R' : null);
+            var subRoll = null;
+            if (st === 0 && (roll === 'L' || roll === 'LR')) subRoll = steps === 1 ? 'LR' : 'L';
+            if (st === steps - 1 && (roll === 'R' || roll === 'LR')) subRoll = steps === 1 ? 'LR' : 'R';
+            emitBox(bx0, bx1, bTop, subRoll);
           }
         });
+        if (nutInfo) nutInfo.floorsBackMm = nutFloorsBack;
       }
 
       // --- headstock extension (first piece only) ----------------------
@@ -715,7 +907,8 @@
       // total reach past the nut is headstockExtMm + thicknessMm.
       if (pieceIdx === 0 && p.headstockExtMm > 0) {
         var ext = p.headstockExtMm;
-        var wProfile = [[0, 0], [-(ext + p.thicknessMm), 0], [-ext, p.thicknessMm], [0, p.thicknessMm]];
+        var nd = p.nutDepthMm; // the wedge starts at the nut's headstock face
+        var wProfile = [[-nd, 0], [-(nd + ext + p.thicknessMm), 0], [-(nd + ext), p.thicknessMm], [-nd, p.thicknessMm]];
         var wSecs = [-1, -0.5, 0, 0.5, 1].map(function (fr) {
           var wx = (fr * wn) / 2;
           return { x: wx, s: 1, dz: -sagAt(wx) };
@@ -739,7 +932,7 @@
       groups: { endWalls: groupEndWalls, body: groupBody, recess: groupRecess, features: groupFeatures },
       pieces: pieces,
       meta: {
-        lengthMm: length + ((p.headstockExtMm || 0) > 0 ? p.headstockExtMm + p.thicknessMm : 0),
+        lengthMm: p.nutDepthMm + length + ((p.headstockExtMm || 0) > 0 ? p.headstockExtMm + p.thicknessMm : 0),
         lastFretYMm: lastFretY,
         nutWidthMm: wn,
         tailWidthMm: widthAt(length),
@@ -751,6 +944,7 @@
         keptFrets: keptFrets,
         radiusMm: radiusR,
         stringGaugesIn: gauges,
+        nut: nutInfo,
         tuningLabel: TUNING_LABELS[p.strings] || '',
         triangleCount: tris.length / 9,
         warnings: warnings
