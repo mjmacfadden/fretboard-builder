@@ -49,7 +49,7 @@
       heelWidthMm: clamp(num(els.heelWidth, 1.5), 1.1, 3) * IN,
       thicknessMm: clamp(num(els.thickness, 0.2), 0.14, 0.31) * IN,
       fretHeightMm: clamp(num(els.fretHeight, 0.035), 0.02, 0.06) * IN,
-      tailMm: clamp(num(els.tail, 0.75), 0.4, 2.36) * IN,
+      tailMm: clamp(num(els.tail, 1.2), 0.4, 2.36) * IN,
       slotHeightMm: clamp(num(els.slotHeight, 0.3), 0.1, 0.8),
       slotSlopeDeg: clamp(num(els.slotSlope, 7.5), 0, 20),
       nutScrew: els.nutScrew.checked,

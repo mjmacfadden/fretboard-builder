@@ -24,16 +24,16 @@
       Strings
       <select id="strings">
         <option value="2">2</option>
-        <option value="3" selected>3</option>
-        <option value="4">4</option>
+        <option value="3">3</option>
+        <option value="4" selected>4</option>
         <option value="5">5</option>
         <option value="6">6</option>
       </select>
     </label>
 
     <label>
-      Frets <span id="frets-value" class="value">20</span>
-      <input type="range" id="frets" min="12" max="24" step="1" value="20">
+      Frets <span id="frets-value" class="value">19</span>
+      <input type="range" id="frets" min="12" max="24" step="1" value="19">
     </label>
 
     <label>
@@ -127,7 +127,7 @@
       <label>
         Board past last fret
         <span class="row">
-          <input type="number" id="tail" value="0.75" min="0.4" max="2.36" step="0.05">
+          <input type="number" id="tail" value="1.2" min="0.4" max="2.36" step="0.05">
           <span class="unit">in</span>
         </span>
       </label>
@@ -148,7 +148,7 @@
         Left-handed (reverses the nut slot order)
       </label>
       <label class="check">
-        <input type="checkbox" id="headstock-ext">
+        <input type="checkbox" id="headstock-ext" checked>
         Headstock extension — ¼″ flat past the nut, then a 45° taper (Strat style)
       </label>
       <label>
