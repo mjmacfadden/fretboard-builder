@@ -14,10 +14,12 @@
     strings: $('strings'), frets: $('frets'), fretsValue: $('frets-value'),
     scalePreset: $('scale-preset'), scale: $('scale'),
     nutWidth: $('nut-width'), heelWidth: $('heel-width'),
-    split: $('split'), fret17: $('fret-17'),
+    split: $('split'), fret17: $('fret-17'), fretMode: $('fret-mode'),
     thickness: $('thickness'), fretHeight: $('fret-height'), tail: $('tail'),
     nutScrew: $('nut-screw'), tailScrew: $('tail-screw'), roundTail: $('round-tail'),
     leftHanded: $('left-handed'),
+    headstockExt: $('headstock-ext'),
+    fbRadius: $('fb-radius'),
     downloads: $('downloads'), filename: $('filename'),
     sizeOut: $('size-out'), holesOut: $('holes-out'), slotsOut: $('slots-out'),
     warnings: $('warnings'),
@@ -51,12 +53,28 @@
       tailScrew: els.tailScrew.checked,
       tailCornerRadiusMm: els.roundTail.checked ? 6.35 : 0,
       leftHanded: els.leftHanded.checked,
+      headstockExtMm: els.headstockExt.checked ? 6.35 : 0,
+      radiusMm: parseFloat(els.fbRadius.value) || 0,
       splitAfterFret: parseInt(els.split.value, 10) || 0,
+      fretSteps: Fretboard.FRET_MODES[els.fretMode.value] || null,
       skipMarkers: els.fret17.checked ? [] : [17]
     };
   }
 
   function fmtIn(mm) { return (mm / IN).toFixed(2) + '″'; }
+
+  // Pieces are built in whole-board coordinates (part 2 starts where
+  // part 1 ends). For the STL, shift each piece to its own origin so
+  // both parts can be dropped onto one slicer plate and arranged.
+  function rebasePiece(piece) {
+    var src = piece.triangles;
+    if (!piece.y0) return src;
+    var out = new Float32Array(src.length);
+    for (var i = 0; i < src.length; i++) {
+      out[i] = (i % 9 === 1 || i % 9 === 4 || i % 9 === 7) ? src[i] - piece.y0 : src[i];
+    }
+    return out;
+  }
 
   function downloadSTL(triangles, filename) {
     var blob = STLExport.trianglesToSTL(triangles);
@@ -76,7 +94,8 @@
     var meta = result.meta;
     var scaleIn = (params.scaleMm / IN).toFixed(2).replace(/\.?0+$/, '');
     var base = 'fretboard_' + params.strings + 'string_' + params.frets +
-      'fret_' + scaleIn + 'in';
+      'fret_' + scaleIn + 'in' +
+      (params.radiusMm ? '_r' + (Math.round((params.radiusMm / IN) * 100) / 100) : '');
     var multi = result.pieces.length > 1;
     current = { triangles: result.triangles, meta: meta, filename: base + '.stl' };
 
@@ -94,7 +113,7 @@
         ? '⬇ Part ' + (i + 1) + ' — ' + (i === 0 ? 'nut end' : 'tail end') +
           ' (' + fmtIn(piece.lengthMm) + ')'
         : '⬇ Download STL';
-      btn.addEventListener('click', function () { downloadSTL(piece.triangles, fname); });
+      btn.addEventListener('click', function () { downloadSTL(rebasePiece(piece), fname); });
       els.downloads.appendChild(btn);
     });
     els.filename.textContent = names.join('  +  ');
@@ -121,14 +140,14 @@
     }
 
     var rows = '';
-    for (var n = 1; n < meta.fretDistancesMm.length; n++) {
+    meta.keptFrets.forEach(function (n) {
       var d = meta.fretDistancesMm[n];
       rows += '<tr><td>' + n + '</td><td>' + (d / IN).toFixed(3) + '</td><td>' +
         d.toFixed(1) + '</td></tr>';
-    }
+    });
     els.fretRows.innerHTML = rows;
 
-    if (preview) preview.setTriangles(result.triangles);
+    if (preview) preview.setScene(result.groups);
   }
 
   // ------------------------------------------------------------------
@@ -151,9 +170,50 @@
       return null;
     }
 
-    var tris = null;
+    var tris = null; // scene groups { body, recess, features }
+    var groupNormals = {}; // per-group smoothed vertex normals
     var center = [0, 0, 0], radius = 1;
     var az = -0.6, el = 0.62, zoom = 1;
+
+    // Smooth (per-vertex) normals for shading: at each vertex, average
+    // the normals of the faces meeting there that point within ~30
+    // degrees of each other. Curved surfaces (fret crowns, countersink
+    // cones, nut round-overs, the radius) shade smoothly, while sharp
+    // edges (board edges, slot walls) stay crisp.
+    function computeNormals(t) {
+      var fn = new Float32Array(t.length);
+      var i, j;
+      for (i = 0; i < t.length; i += 9) {
+        var ux = t[i + 3] - t[i], uy = t[i + 4] - t[i + 1], uz = t[i + 5] - t[i + 2];
+        var wx = t[i + 6] - t[i], wy = t[i + 7] - t[i + 1], wz = t[i + 8] - t[i + 2];
+        var nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+        var nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        for (j = 0; j < 3; j++) {
+          fn[i + j * 3] = nx / nl; fn[i + j * 3 + 1] = ny / nl; fn[i + j * 3 + 2] = nz / nl;
+        }
+      }
+      var byVertex = new Map();
+      for (i = 0; i < t.length; i += 3) {
+        var key = t[i].toFixed(3) + ',' + t[i + 1].toFixed(3) + ',' + t[i + 2].toFixed(3);
+        if (!byVertex.has(key)) byVertex.set(key, []);
+        byVertex.get(key).push(i);
+      }
+      var out = new Float32Array(t.length);
+      byVertex.forEach(function (slots) {
+        slots.forEach(function (s) {
+          var fx = fn[s], fy = fn[s + 1], fz = fn[s + 2];
+          var sx = 0, sy = 0, sz = 0;
+          slots.forEach(function (o) {
+            if (fn[o] * fx + fn[o + 1] * fy + fn[o + 2] * fz > 0.86) {
+              sx += fn[o]; sy += fn[o + 1]; sz += fn[o + 2];
+            }
+          });
+          var l = Math.sqrt(sx * sx + sy * sy + sz * sz) || 1;
+          out[s] = sx / l; out[s + 1] = sy / l; out[s + 2] = sz / l;
+        });
+      });
+      return out;
+    }
 
     function resize() {
       var w = container.clientWidth, h = container.clientHeight;
@@ -164,18 +224,29 @@
       draw();
     }
 
-    function setTriangles(t) {
-      tris = t;
+    function setScene(groups) {
+      tris = groups;
+      groupNormals = {
+        endWalls: computeNormals(groups.endWalls),
+        body: computeNormals(groups.body),
+        recess: computeNormals(groups.recess),
+        features: computeNormals(groups.features)
+      };
+      var all = groups.endWalls.concat(groups.body, groups.recess, groups.features);
       var min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
-      for (var i = 0; i < t.length; i += 3) {
+      for (var i = 0; i < all.length; i += 3) {
         for (var k = 0; k < 3; k++) {
-          if (t[i + k] < min[k]) min[k] = t[i + k];
-          if (t[i + k] > max[k]) max[k] = t[i + k];
+          if (all[i + k] < min[k]) min[k] = all[i + k];
+          if (all[i + k] > max[k]) max[k] = all[i + k];
         }
       }
       center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
       radius = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2 || 1;
       draw();
+    }
+
+    function colorFor(s) {
+      return 'rgb(' + Math.round(208 * s) + ',' + Math.round(170 * s) + ',' + Math.round(112 * s) + ')';
     }
 
     function draw() {
@@ -194,53 +265,105 @@
       var ll = Math.sqrt(lx * lx + ly * ly + lz * lz);
       lx /= ll; ly /= ll; lz /= ll;
 
-      var faces = [];
-      var i, j;
-      for (i = 0; i < tris.length; i += 9) {
-        var X = [], Y = [], Z = [];
-        for (j = 0; j < 3; j++) {
-          var x = tris[i + j * 3] - center[0];
-          var y = tris[i + j * 3 + 1] - center[1];
-          var z = tris[i + j * 3 + 2] - center[2];
-          // spin in the board's plane, then tilt the top toward the viewer
-          var rx = x * cosA - y * sinA;
-          var ry = x * sinA + y * cosA;
-          X.push(rx);                        // view x (screen right)
-          Y.push(ry * cosE - z * sinE);      // view y (away from viewer)
-          Z.push(ry * sinE + z * cosE);      // view z (screen up)
+      // Paint in layers — board body, then the recessed hole walls,
+      // then the raised features (frets, nut, extension). Within a layer
+      // nothing overlaps in plan, so the painter sort is reliable; a
+      // single mixed sort is NOT (a fret and the face beneath it have no
+      // consistent order, which drew frets as broken dashes).
+      var layerNames = ['endWalls', 'body', 'recess', 'features'];
+      for (var li = 0; li < layerNames.length; li++) {
+        var t = tris[layerNames[li]];
+        var vn = groupNormals[layerNames[li]];
+        if (!t) continue;
+        var faces = [];
+        var i, j;
+        for (i = 0; i < t.length; i += 9) {
+          var X = [], Y = [], Z = [];
+          for (j = 0; j < 3; j++) {
+            var x = t[i + j * 3] - center[0];
+            var y = t[i + j * 3 + 1] - center[1];
+            var z = t[i + j * 3 + 2] - center[2];
+            // spin in the board's plane, then tilt the top toward the viewer
+            var rx = x * cosA - y * sinA;
+            var ry = x * sinA + y * cosA;
+            X.push(rx);                        // view x (screen right)
+            Y.push(ry * cosE - z * sinE);      // view y (away from viewer)
+            Z.push(ry * sinE + z * cosE);      // view z (screen up)
+          }
+          // Face normal in view space (rotations preserve winding).
+          var ux = X[1] - X[0], uy = Y[1] - Y[0], uz = Z[1] - Z[0];
+          var wx = X[2] - X[0], wy = Y[2] - Y[0], wz = Z[2] - Z[0];
+          var nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+          var nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
+          if (nl === 0 || ny >= 0) continue; // backface (viewer sits at -y)
+          nx /= nl; ny /= nl; nz /= nl;
+          var shade = 0.42 + 0.58 * Math.max(0, nx * lx + ny * ly + nz * lz);
+          var px = [], py = [], depth = 0, vsh = [];
+          for (j = 0; j < 3; j++) {
+            px.push(W / 2 + X[j] * scale);
+            py.push(H / 2 - Z[j] * scale);
+            depth += -Y[j]; // toward the viewer
+            if (vn) {
+              var mx = vn[i + j * 3], my = vn[i + j * 3 + 1], mz = vn[i + j * 3 + 2];
+              var mrx = mx * cosA - my * sinA, mry = mx * sinA + my * cosA;
+              var vnx = mrx, vny = mry * cosE - mz * sinE, vnz = mry * sinE + mz * cosE;
+              vsh.push(0.42 + 0.58 * Math.max(0, vnx * lx + vny * ly + vnz * lz));
+            }
+          }
+          faces.push({ px: px, py: py, depth: depth / 3, shade: shade, vsh: vsh });
         }
-        // Face normal in view space (rotations preserve winding).
-        var ux = X[1] - X[0], uy = Y[1] - Y[0], uz = Z[1] - Z[0];
-        var wx = X[2] - X[0], wy = Y[2] - Y[0], wz = Z[2] - Z[0];
-        var nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
-        var nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
-        if (nl === 0 || ny >= 0) continue; // backface (viewer sits at -y)
-        nx /= nl; ny /= nl; nz /= nl;
-        var shade = 0.42 + 0.58 * Math.max(0, nx * lx + ny * ly + nz * lz);
-        var px = [], py = [], depth = 0;
-        for (j = 0; j < 3; j++) {
-          px.push(W / 2 + X[j] * scale);
-          py.push(H / 2 - Z[j] * scale);
-          depth += -Y[j]; // toward the viewer
-        }
-        faces.push({ px: px, py: py, depth: depth / 3, shade: shade });
-      }
-      faces.sort(function (a, b) { return a.depth - b.depth; }); // far first
+        faces.sort(function (a, b) { return a.depth - b.depth; }); // far first
 
-      for (i = 0; i < faces.length; i++) {
-        var f = faces[i], s = f.shade;
-        ctx.beginPath();
-        ctx.moveTo(f.px[0], f.py[0]);
-        ctx.lineTo(f.px[1], f.py[1]);
-        ctx.lineTo(f.px[2], f.py[2]);
-        ctx.closePath();
-        ctx.fillStyle = 'rgb(' + Math.round(208 * s) + ',' + Math.round(170 * s) + ',' + Math.round(112 * s) + ')';
-        ctx.fill();
-        // stroke with the fill color: seals hairline seams between faces
-        // without drawing the triangulation as a dark web
-        ctx.strokeStyle = ctx.fillStyle;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        for (i = 0; i < faces.length; i++) {
+          var f = faces[i], s = f.shade;
+          ctx.beginPath();
+          ctx.moveTo(f.px[0], f.py[0]);
+          ctx.lineTo(f.px[1], f.py[1]);
+          ctx.lineTo(f.px[2], f.py[2]);
+          ctx.closePath();
+          if (f.vsh.length === 3 && (f.vsh[0] !== f.vsh[1] || f.vsh[1] !== f.vsh[2])) {
+            // Exact linear (Gouraud) interpolation of the vertex shades:
+            // fit shade = a*x + b*y + c through the three vertices and
+            // run the gradient along (a, b). Cheaper darkest-to-lightest
+            // gradients flip direction per triangle and weave a diamond
+            // pattern into long thin faces like the fret lofts.
+            var det = (f.px[1] - f.px[0]) * (f.py[2] - f.py[0]) -
+                      (f.px[2] - f.px[0]) * (f.py[1] - f.py[0]);
+            var ga = det !== 0 ? ((f.vsh[1] - f.vsh[0]) * (f.py[2] - f.py[0]) -
+                                  (f.vsh[2] - f.vsh[0]) * (f.py[1] - f.py[0])) / det : 0;
+            var gb = det !== 0 ? ((f.px[1] - f.px[0]) * (f.vsh[2] - f.vsh[0]) -
+                                  (f.px[2] - f.px[0]) * (f.vsh[1] - f.vsh[0])) / det : 0;
+            var gl2 = ga * ga + gb * gb;
+            if (gl2 > 1e-12) {
+              var sMin = Math.min(f.vsh[0], f.vsh[1], f.vsh[2]);
+              var sMax = Math.max(f.vsh[0], f.vsh[1], f.vsh[2]);
+              var start = f.vsh.indexOf(sMin);
+              var gLen = (sMax - sMin) / Math.sqrt(gl2); // distance along the (ga, gb) direction covering the full shade range
+              var ux = ga / Math.sqrt(gl2), uy = gb / Math.sqrt(gl2);
+              var grad = ctx.createLinearGradient(
+                f.px[start], f.py[start],
+                f.px[start] + ux * gLen, f.py[start] + uy * gLen);
+              grad.addColorStop(0, colorFor(sMin));
+              for (var q = 0; q < 3; q++) {
+                if (q === start) continue;
+                var frac = ((f.px[q] - f.px[start]) * ux + (f.py[q] - f.py[start]) * uy) / gLen;
+                grad.addColorStop(Math.max(0, Math.min(1, frac)), colorFor(f.vsh[q]));
+              }
+              grad.addColorStop(1, colorFor(sMax));
+              ctx.fillStyle = grad;
+            } else {
+              ctx.fillStyle = colorFor(s);
+            }
+          } else {
+            ctx.fillStyle = colorFor(s);
+          }
+          ctx.fill();
+          // stroke with the flat fill color: seals hairline seams between
+          // faces without drawing the triangulation as a dark web
+          ctx.strokeStyle = colorFor(s);
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
       }
     }
 
@@ -272,7 +395,7 @@
     window.addEventListener('resize', resize);
 
     resize();
-    return { setTriangles: setTriangles, draw: draw, canvas: canvas };
+    return { setScene: setScene, draw: draw, canvas: canvas };
   }
 
   // ------------------------------------------------------------------
@@ -303,8 +426,11 @@
   els.tailScrew.addEventListener('change', rebuild);
   els.roundTail.addEventListener('change', rebuild);
   els.leftHanded.addEventListener('change', rebuild);
+  els.headstockExt.addEventListener('change', rebuild);
+  els.fbRadius.addEventListener('change', rebuild);
   els.split.addEventListener('change', rebuild);
   els.fret17.addEventListener('change', rebuild);
+  els.fretMode.addEventListener('change', rebuild);
 
   preview = createPreview(els.preview, els.previewFallback);
   rebuild();

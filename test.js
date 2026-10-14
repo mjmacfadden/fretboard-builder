@@ -287,4 +287,146 @@ console.log('E2 ok: split past last fret degrades to one piece with a warning');
   console.log('F ok: 1/4in rounded tail corners on by default, square when off');
 }
 
+// === Config G: fret modes (diatonic / pentatonic / pentatonic-plus) ======
+{
+  const G = Fretboard.buildFretboard({
+    scaleMm: 23.5 * 25.4, strings: 3, frets: 20,
+    nutWidthMm: 1.5 * 25.4, heelWidthMm: 1.5 * 25.4,
+    splitAfterFret: 7, fretSteps: Fretboard.FRET_MODES.pentatonic
+  }, earcut);
+  assert.deepStrictEqual(G.meta.keptFrets, [3, 5, 7, 10, 12, 15, 17, 19],
+    'pentatonic keeps minor-pentatonic frets only');
+  const dG = G.meta.fretDistancesMm;
+  approx(rayDown(G.triangles, 10, dG[3]), T + 0.9, 0.01, 'pentatonic: fret 3 ridge present');
+  approx(rayDown(G.triangles, 10, dG[2]), T, 0.01, 'pentatonic: no ridge at fret 2 position');
+  approx(rayDown(G.triangles, 10, dG[12]), T + 0.9, 0.01, 'pentatonic: octave ridge present');
+  assert.strictEqual(G.meta.holes.length, 8, 'pentatonic: screw markers unchanged (8)');
+  assert.strictEqual(G.pieces.length, 2, 'pentatonic: split after fret 7 still splits (7 is a scale tone)');
+
+  const Gd = Fretboard.buildFretboard({
+    scaleMm: 23.5 * 25.4, strings: 3, frets: 12,
+    nutWidthMm: 38, heelWidthMm: 38, fretSteps: Fretboard.FRET_MODES.diatonic
+  }, earcut);
+  assert.deepStrictEqual(Gd.meta.keptFrets, [2, 4, 5, 7, 9, 11, 12], 'diatonic kept frets');
+
+  const Gp = Fretboard.buildFretboard({
+    scaleMm: 23.5 * 25.4, strings: 3, frets: 12,
+    nutWidthMm: 38, heelWidthMm: 38, fretSteps: Fretboard.FRET_MODES['pentatonic-plus']
+  }, earcut);
+  assert.deepStrictEqual(Gp.meta.keptFrets, [3, 5, 6, 7, 10, 12],
+    "pentatonic-plus kept frets (Puckett: minor pentatonic + flat-5 blue note)");
+  console.log('G ok: fret modes keep only in-scale ridges; markers/split unaffected');
+}
+
+// === Config H: headstock extension with a 45-degree chamfer =============
+{
+  const base = {
+    scaleMm: 23.5 * 25.4, strings: 3, frets: 20,
+    nutWidthMm: 1.5 * 25.4, heelWidthMm: 1.5 * 25.4,
+    thicknessMm: 0.2 * 25.4, splitAfterFret: 7
+  };
+  const off = Fretboard.buildFretboard(base, earcut);
+  const on = Fretboard.buildFretboard(Object.assign({}, base, { headstockExtMm: 6.35 }), earcut);
+  const T = 0.2 * 25.4; // 5.08
+  // a 1/4" FLAT at full thickness past the nut, then a 45-degree taper
+  // dropping the full thickness: total reach = 6.35 + 5.08 = 11.43
+  approx(rayDown(on.triangles, 10, -3), T, 0.02, 'ext: flat at full thickness past the nut');
+  approx(rayDown(on.triangles, 10, -6.35 - 2.54), T - 2.54, 0.02, 'ext: 45deg taper mid-run');
+  approx(rayDown(on.triangles, 10, -11.4), 0.03, 0.02, 'ext: taper reaches the bottom at the tip');
+  assert.strictEqual(rayDown(off.triangles, 10, -8), null, 'ext off: nothing behind the nut');
+  // volume: rectangle (6.35 x T) + triangle (T x T / 2), across 38.1 wide
+  const wedgeVol = (6.35 * T + (T * T) / 2) * 38.1;
+  const dv = Fretboard.signedVolume(on.triangles) - Fretboard.signedVolume(off.triangles);
+  assert.ok(Math.abs(dv - wedgeVol) < wedgeVol * 0.02,
+    'ext: wedge volume ' + dv.toFixed(0) + ' ~= ' + wedgeVol.toFixed(0));
+  // bookkeeping: piece 1 grows by the full reach, total length too
+  approx(on.pieces[0].y0, -11.43, 0.001, 'ext: piece 1 starts at -11.43');
+  approx(on.pieces[0].lengthMm, off.pieces[0].lengthMm + 11.43, 0.01, 'ext: piece 1 length +0.45in');
+  approx(on.meta.lengthMm, off.meta.lengthMm + 11.43, 0.01, 'ext: overall length +0.45in');
+  console.log('H ok: headstock extension = 1/4in flat past the nut, then a 45deg taper');
+}
+
+// === Config I: 3-string nut spacing (center + 1/2" each side) ============
+{
+  const N = Fretboard.buildFretboard({
+    scaleMm: 23.5 * 25.4, strings: 3, frets: 20,
+    nutWidthMm: 1.5 * 25.4, heelWidthMm: 1.5 * 25.4,
+    thicknessMm: 0.2 * 25.4, nutHeightMm: 2
+  }, earcut);
+  const nutTop = 0.2 * 25.4 + 2;
+  // outer slot at exactly +1/2" (holds the .042 in a right-handed build)
+  approx(rayDown(N.triangles, 12.7, 2.5), nutTop - 0.64, 0.02, '3-string nut: slot at +1/2in');
+  approx(rayDown(N.triangles, -12.7, 2.5), nutTop - 0.366, 0.02, '3-string nut: slot at -1/2in (.024 slot)');
+  // the old margin-spread position (15.6mm) is solid nut now
+  approx(rayDown(N.triangles, 15.62, 2.5), nutTop, 0.02, '3-string nut: no slot at the old spread position');
+  // center slot stays centered (.032)
+  approx(rayDown(N.triangles, 0, 2.5), nutTop - 0.49, 0.02, '3-string nut: center slot centered');
+  console.log('I ok: 3-string nut slots at -1/2in, 0, +1/2in');
+}
+
+// === Config J: fretboard radius ==========================================
+{
+  const base = {
+    scaleMm: 23.5 * 25.4, strings: 3, frets: 20,
+    nutWidthMm: 1.5 * 25.4, heelWidthMm: 1.5 * 25.4,
+    thicknessMm: 0.2 * 25.4, splitAfterFret: 7
+  };
+  const flat = Fretboard.buildFretboard(base, earcut);
+  const rad = Fretboard.buildFretboard(Object.assign({}, base, { radiusMm: 304.8 }), earcut);
+  const T = 0.2 * 25.4;
+  const sag = (x) => 304.8 - Math.sqrt(304.8 * 304.8 - x * x);
+  // top surface: crowned at the centerline, dropping toward the edges
+  approx(rayDown(rad.triangles, 0, 100), T, 0.01, 'radius: centerline at full thickness');
+  approx(rayDown(rad.triangles, 18, 100), T - sag(18), 0.04, 'radius: surface follows the curve at x=18');
+  approx(rayDown(rad.triangles, -18, 100), T - sag(18), 0.04, 'radius: curve is symmetric');
+  approx(rayDown(flat.triangles, 18, 100), T, 0.01, 'flat build: no drop at x=18');
+  // fret crowns stand the same height above the LOCAL surface
+  const d3 = rad.meta.fretDistancesMm[3];
+  approx(rayDown(rad.triangles, 0, d3), T + 0.9, 0.02, 'radius: fret 3 crown at center');
+  approx(rayDown(rad.triangles, 15, d3), T - sag(15) + 0.9, 0.05, 'radius: fret 3 crown follows curve at x=15');
+  // nut slots: depth constant, floors follow the curve
+  approx(rayDown(rad.triangles, 0, 2.5), T + 2 - 0.488, 0.02, 'radius: center slot floor');
+  approx(rayDown(rad.triangles, 12.7, 2.5), T + 2 - sag(12.7) - 0.64, 0.08, 'radius: outer slot floor follows curve');
+  // material removed, pieces still closed solids, lengths unchanged
+  const dv = Fretboard.signedVolume(flat.triangles) - Fretboard.signedVolume(rad.triangles);
+  assert.ok(dv > 1500 && dv < 6000, 'radius: curve removes a sane amount of material (' + dv.toFixed(0) + ' mm3)');
+  rad.pieces.forEach((pc, i) => assert.ok(Fretboard.signedVolume(pc.triangles) > 0, 'radius: piece ' + (i + 1) + ' closed'));
+  approx(rad.pieces[0].lengthMm, flat.pieces[0].lengthMm, 0.001, 'radius: piece lengths unchanged');
+  assert.strictEqual(rad.meta.radiusMm, 304.8, 'radius: meta reports the radius');
+  // thin-edge warning only for the extreme combo (6-string + 7.25in)
+  const extreme = Fretboard.buildFretboard({
+    scaleMm: 25.5 * 25.4, strings: 6, frets: 20,
+    nutWidthMm: 1.75 * 25.4, heelWidthMm: 2.125 * 25.4,
+    thicknessMm: 0.2 * 25.4, radiusMm: 184.15
+  }, earcut);
+  assert.ok(extreme.meta.warnings.some((w) => w.includes('edges get thin')), 'radius: thin-edge warning fires');
+  assert.ok(!rad.meta.warnings.some((w) => w.includes('edges get thin')), 'radius: no thin-edge warning at 12in/3-string');
+  console.log('J ok: 12in radius curves top, frets and nut; bottom flat; thin-edge warning works');
+}
+
+// === Config K: nut ends rounded over, long edges square =================
+{
+  const K = Fretboard.buildFretboard({
+    scaleMm: 23.5 * 25.4, strings: 3, frets: 20,
+    nutWidthMm: 1.5 * 25.4, heelWidthMm: 1.5 * 25.4,
+    thicknessMm: 0.2 * 25.4, nutHeightMm: 2
+  }, earcut);
+  const nutTop = 0.2 * 25.4 + 2; // 7.08
+  // raised segment between the center and +1/2in slots: full height
+  approx(rayDown(K.triangles, 6, 2.5), nutTop, 0.02, 'nut: full height at mid-depth');
+  // the long front/back top edges stay SQUARE — full height right up
+  // to the nut's front and back faces
+  approx(rayDown(K.triangles, 6, 0.2), nutTop, 0.02, 'nut: front top edge square');
+  approx(rayDown(K.triangles, 6, 4.8), nutTop, 0.02, 'nut: back top edge square');
+  // the left/right ENDS roll over on a 1.2mm radius: full height just
+  // inside the roll, stepped down near the outer faces
+  approx(rayDown(K.triangles, 17, 2.5), nutTop, 0.02, 'nut: full height inside the end roll');
+  approx(rayDown(K.triangles, 18.0, 2.5), nutTop - 0.01, 0.03, 'nut: end roll near its top');
+  approx(rayDown(K.triangles, 18.9, 2.5), nutTop - 0.62, 0.03, 'nut: end roll near the face');
+  approx(rayDown(K.triangles, -18.9, 2.5), nutTop - 0.62, 0.03, 'nut: left end rolls too');
+  // slot floors stay exact (string seating unchanged)
+  approx(rayDown(K.triangles, 0, 2.5), nutTop - 0.488, 0.02, 'nut: slot floor unchanged');
+  console.log('K ok: nut ends rounded over (1.2mm radius), long edges square, slot floors exact');
+}
+
 console.log('\nALL GEOMETRY TESTS PASSED');

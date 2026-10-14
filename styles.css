@@ -92,7 +92,7 @@ main {
   height: 430px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: linear-gradient(#efe7d6, #e2d7bf);
+  background: linear-gradient(#e8ddc3, #c9b78f);
   overflow: hidden;
 }
 #preview canvas { display: block; }

@@ -37,6 +37,16 @@
     </label>
 
     <label>
+      Fret mode
+      <select id="fret-mode">
+        <option value="chromatic" selected>Chromatic — every fret</option>
+        <option value="diatonic">Diatonic — major scale only</option>
+        <option value="pentatonic">Pentatonic — minor pentatonic</option>
+        <option value="pentatonic-plus">Pentatonic Plus — Puckett (blues scale)</option>
+      </select>
+    </label>
+
+    <label>
       Scale length
       <span class="row">
         <select id="scale-preset">
@@ -122,6 +132,20 @@
       <label class="check">
         <input type="checkbox" id="left-handed">
         Left-handed (reverses the nut slot order)
+      </label>
+      <label class="check">
+        <input type="checkbox" id="headstock-ext">
+        Headstock extension — ¼″ flat past the nut, then a 45° taper (Strat style)
+      </label>
+      <label>
+        Fretboard radius
+        <select id="fb-radius">
+          <option value="0" selected>Flat (off)</option>
+          <option value="406.4">16″ — flatter, modern</option>
+          <option value="304.8">12″ — Gibson style</option>
+          <option value="241.3">9.5″ — modern Fender</option>
+          <option value="184.15">7.25″ — vintage Fender</option>
+        </select>
       </label>
     </details>
 
