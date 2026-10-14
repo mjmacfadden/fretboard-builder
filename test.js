@@ -84,17 +84,18 @@ approx(rayDown(trisA, 10, metaA.fretDistancesMm[5]), T + 0.9, 0.01, 'fret 5 crow
 // rounded crown: 0.6 mm off-centre the fret must already fall away
 // (half-ellipse profile; a flat-topped fret would still read T + 0.9 here)
 approx(rayDown(trisA, 10, metaA.fretDistancesMm[5] + 0.6), T + 0.67, 0.03, 'fret 5 crown falls away off-centre');
-// fret ends round over bluntly: 0.75 mm in from the end the crown is at
-// ~80% of the rise 0.75mm in from the end (cosine-eased dome), and at
-// the very tip the end face still stands ~0.15 mm over the board — not
-// a point (a pointed taper would read ~board level at the tip, a
-// square cut would read full height)
+// fret ends are true half domes: the profile shrinks on a quarter
+// ellipse (scale = sin a at domeR*(1 - cos a) in from the tip), so
+// 0.75 mm in the crown is already near full height, 0.3 mm in it is
+// part-way up the curve, and at the very tip the dome has curved all
+// the way down through the board surface — no end wall, no point.
 {
   const d5 = metaA.fretDistancesMm[5];
   const half5 = (metaA.nutWidthMm + (44.45 - metaA.nutWidthMm) * (d5 / metaA.fretDistancesMm[20])) / 2 - 0.4;
-  approx(rayDown(trisA, half5 - 0.75, d5), T + 0.62, 0.06, 'fret 5 end blends down');
-  approx(rayDown(trisA, half5 - 0.05, d5), T + 0.16, 0.06, 'fret 5 end face is a blunt dome');
-  approx(rayDown(trisA, -(half5 - 0.05), d5), T + 0.16, 0.06, 'fret 5 other end blunt too');
+  approx(rayDown(trisA, half5 - 0.75, d5), T + 0.79, 0.04, 'fret 5 dome near full height 0.75mm in');
+  approx(rayDown(trisA, half5 - 0.3, d5), T + 0.38, 0.04, 'fret 5 dome mid-curve');
+  approx(rayDown(trisA, half5 - 0.05, d5), T, 0.01, 'fret 5 dome meets the board at the tip');
+  approx(rayDown(trisA, -(half5 - 0.05), d5), T, 0.01, 'fret 5 other end domes down too');
 }
 approx(rayDown(trisA, 0, -0.25), T + 1.27, 0.02, 'centre slot floor near the face (D .032: crown + 0.40 target, minus slope drop)');
 // slot width fits the string: 0.3 mm off-centre is still slot floor,

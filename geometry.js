@@ -704,26 +704,30 @@
             p.thicknessMm - embed + rise * Math.sin(ang)
           ]);
         }
-        // Round the fret ends over: loft the profile along x, scaling it
-        // down toward each end — but bluntly: the end face keeps about
-        // half the fret's size, a small dome like a filed fret end, and
-        // does NOT taper away to a point.
-        var endLen = Math.min(1.0, half * 0.5);
-        var full = half - endLen; // half-width of the full-height zone
-        // Cosine-eased scale steps so the end dome blends smoothly
-        // instead of terracing in two big jumps (0.5 -> 0.8 -> 1).
+        // Cap each fret end with a true half dome, like the ball end of
+        // a filed fret: the profile is lofted along x through sections
+        // sampled on a quarter ellipse — at angle a from the dome's pole
+        // the section sits domeR*(1 - cos a) in from the tip and is
+        // scaled by sin a — so the end curves continuously in both
+        // silhouettes (a semicircle in plan, a quarter ellipse from the
+        // side) and sinks through the board surface instead of stopping
+        // at a small vertical end wall, which read as a sharp point.
+        // The outermost section (a = 11.25 deg) still sits below the
+        // board top, so the cap fan closing the loft stays buried.
+        var domeR = Math.min(halfBase, half * 0.5);
+        var full = half - domeR; // half-width of the full-height zone
+        var DSEG = 8, dk, da;
         var sections = [];
-        var ek, efr;
-        for (ek = 0; ek <= 5; ek++) {
-          efr = ek / 5;
-          sections.push({ x: -half + endLen * efr, s: 1 - 0.5 * Math.cos(efr * Math.PI / 2) });
+        for (dk = 1; dk <= DSEG; dk++) {
+          da = (dk / DSEG) * Math.PI / 2;
+          sections.push({ x: -half + domeR * (1 - Math.cos(da)), s: Math.sin(da) });
         }
         [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75].forEach(function (fr) {
           sections.push({ x: fr * full, s: 1 });
         });
-        for (ek = 5; ek >= 0; ek--) {
-          efr = ek / 5;
-          sections.push({ x: half - endLen * efr, s: 1 - 0.5 * Math.cos(efr * Math.PI / 2) });
+        for (dk = DSEG; dk >= 1; dk--) {
+          da = (dk / DSEG) * Math.PI / 2;
+          sections.push({ x: half - domeR * (1 - Math.cos(da)), s: Math.sin(da) });
         }
         // Each section drops by the radius sag at its x, so the crown
         // stands fretHeightMm proud of the LOCAL surface everywhere.
