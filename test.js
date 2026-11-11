@@ -661,4 +661,84 @@ function boundaryEdgeCount(tris) {
   console.log('P ok: slot floors slope from a high break point at the fret-side face; clamp and watertightness hold');
 }
 
+// === Config Q: multi-piece splits, Auto bed fit, alignment keys ==========
+{
+  const base = { scaleMm: 596.9, strings: 4, frets: 19, nutWidthMm: 38.1, heelWidthMm: 38.1, thicknessMm: 5.08, fretHeightMm: 0.889, tailMm: 30.48 };
+  function yExtent(tris) {
+    let mn = 1e9, mx = -1e9;
+    for (let i = 1; i < tris.length; i += 3) { if (tris[i] < mn) mn = tris[i]; if (tris[i] > mx) mx = tris[i]; }
+    return [mn, mx];
+  }
+  // backward compatibility: the legacy single split == a one-item list
+  const Qleg = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFret: 7 }), earcut);
+  const Qlist = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [7] }), earcut);
+  assert.strictEqual(Qleg.pieces.length, 2, 'Q: legacy splitAfterFret gives 2 pieces');
+  approx(Qlist.pieces[0].lengthMm, Qleg.pieces[0].lengthMm, 0.001, 'Q: list [7] matches legacy piece 1 length');
+  approx(Qlist.pieces[1].lengthMm, Qleg.pieces[1].lengthMm, 0.001, 'Q: list [7] matches legacy piece 2 length');
+  approx(yExtent(Qlist.pieces[0].triangles)[1], Qlist.meta.splitYMs[0], 0.001, 'Q: no keys by default — piece 1 ends exactly at the seam');
+  // three pieces, lengths add up, every piece sealed (flat + radiused)
+  const Q3 = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [5, 12] }), earcut);
+  assert.strictEqual(Q3.pieces.length, 3, 'Q: [5, 12] gives 3 pieces');
+  assert.deepStrictEqual(Q3.meta.splitFrets, [5, 12], 'Q: meta reports the effective split frets');
+  approx(Q3.pieces.reduce((s, pc) => s + pc.lengthMm, 0), Q3.meta.lengthMm, 0.01, 'Q: piece lengths add up to the board length');
+  Q3.pieces.forEach((piece, pi) => {
+    assert.strictEqual(boundaryEdgeCount(piece.triangles), 0, 'Q: piece ' + (pi + 1) + ' has no boundary edges');
+  });
+  const Q3r = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [5, 12], radiusMm: 304.8 }), earcut);
+  Q3r.pieces.forEach((piece, pi) => {
+    assert.strictEqual(boundaryEdgeCount(piece.triangles), 0, 'Q: radiused piece ' + (pi + 1) + ' has no boundary edges');
+  });
+  // invalid split lists are clear errors
+  assert.throws(() => Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [12, 5] }), earcut), /splitAfterFrets/, 'Q: out-of-order splits rejected');
+  assert.throws(() => Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [7, 7] }), earcut), /splitAfterFrets/, 'Q: duplicate splits rejected');
+  assert.throws(() => Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [7.5] }), earcut), /splitAfterFrets/, 'Q: fractional split fret rejected');
+  // a split past the last fret is dropped with a warning, not a crash
+  const Qpast = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [7, 24] }), earcut);
+  assert.strictEqual(Qpast.pieces.length, 2, 'Q: split past the last fret is dropped');
+  assert.ok(Qpast.meta.warnings.some(w => w.includes('Split not applied')), 'Q: dropped split warns');
+  // Auto: every piece fits a 220 mm bed on the long scales, pieces sealed
+  [24, 25, 25.5].forEach(inches => {
+    const Qa = Fretboard.buildFretboard({ scaleMm: inches * 25.4, strings: 4, frets: 20, nutWidthMm: 38.1, heelWidthMm: 44.45, thicknessMm: 5.08, fretHeightMm: 0.889, tailMm: 19.05, autoSplit: true, bedMm: 220 }, earcut);
+    assert.ok(Qa.pieces.length >= 2 && Qa.pieces.length <= 3, 'Q auto ' + inches + 'in: 2–3 pieces (got ' + Qa.pieces.length + ')');
+    Qa.pieces.forEach((piece, pi) => {
+      assert.ok(piece.lengthMm <= 220 + 0.01, 'Q auto ' + inches + 'in: part ' + (pi + 1) + ' fits the bed (' + piece.lengthMm.toFixed(1) + ' mm)');
+      assert.strictEqual(boundaryEdgeCount(piece.triangles), 0, 'Q auto ' + inches + 'in: part ' + (pi + 1) + ' sealed');
+    });
+  });
+  // Auto leaves a board that already fits in one piece
+  const Qfit = Fretboard.buildFretboard(Object.assign({}, base, { autoSplit: true, bedMm: 500 }), earcut);
+  assert.strictEqual(Qfit.pieces.length, 1, 'Q auto: a board that fits stays one piece');
+  // the planner: the default-size board with the extension needs 3 pieces on a 220 bed
+  const plan = Fretboard.planSplits(Object.assign({}, base, { headstockExtMm: 6.35 }), 220);
+  assert.strictEqual(plan.splitFrets.length, 2, 'Q auto: planner picks 2 seams for a 220 bed (got ' + plan.splitFrets.join(', ') + ')');
+  assert.ok(Math.max.apply(null, plan.pieceLengthsMm) <= 220, 'Q auto: planned pieces fit');
+  // a forced split that still overflows the bed warns
+  const Qover = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [12], bedMm: 150 }), earcut);
+  assert.ok(Qover.meta.warnings.some(w => w.includes('print bed')), 'Q: over-bed piece warns');
+  // alignment keys: pin protrudes 3.5 mm past the seam, socket is a real
+  // cavity 3.7 mm deep, and both pieces stay sealed
+  const Qk = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [7], seamKeys: true }), earcut);
+  const seamY = Qk.meta.splitYMs[0];
+  approx(yExtent(Qk.pieces[0].triangles)[1], seamY + 3.5, 0.01, 'Q keys: pin tip sits 3.5mm past the seam');
+  const pinX = 38.1 / 4, cz = 5.08 / 2;
+  let capFound = false;
+  const tr2 = Qk.pieces[1].triangles;
+  for (let i = 0; i < tr2.length; i += 3) {
+    if (Math.abs(tr2[i] - pinX) < 0.01 && Math.abs(tr2[i + 1] - (seamY + 3.7)) < 0.01 && Math.abs(tr2[i + 2] - cz) < 0.01) capFound = true;
+  }
+  assert.ok(capFound, 'Q keys: socket end cap found 3.7mm into piece 2');
+  const vPlain = Qlist.pieces.map(pc => Math.abs(Fretboard.signedVolume(pc.triangles)));
+  const vKey = Qk.pieces.map(pc => Math.abs(Fretboard.signedVolume(pc.triangles)));
+  approx(vKey[0] - vPlain[0], 78, 12, 'Q keys: pins add their volume to piece 1');
+  approx(vPlain[1] - vKey[1], 69, 12, 'Q keys: sockets remove their cavity volume from piece 2');
+  Qk.pieces.forEach((piece, pi) => {
+    assert.strictEqual(boundaryEdgeCount(piece.triangles), 0, 'Q keys: piece ' + (pi + 1) + ' has no boundary edges');
+  });
+  const Qkr = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [7], seamKeys: true, radiusMm: 304.8 }), earcut);
+  Qkr.pieces.forEach((piece, pi) => {
+    assert.strictEqual(boundaryEdgeCount(piece.triangles), 0, 'Q keys: radiused piece ' + (pi + 1) + ' has no boundary edges');
+  });
+  console.log('Q ok: 2- and 3-piece splits sealed and backward compatible; Auto fits 24/25/25.5in boards to a 220 bed; alignment pins + sockets sealed');
+}
+
 console.log('\nALL GEOMETRY TESTS PASSED');

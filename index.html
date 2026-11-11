@@ -86,7 +86,18 @@
         <option value="7" selected>Two pieces — split after fret 7</option>
         <option value="9">Two pieces — split after fret 9</option>
         <option value="12">Two pieces — split after fret 12</option>
+        <option value="5,12">Three pieces — split after frets 5 &amp; 12</option>
+        <option value="7,14">Three pieces — split after frets 7 &amp; 14</option>
+        <option value="auto">Auto — fit my print bed</option>
       </select>
+    </label>
+
+    <label id="bed-row" hidden>
+      Print bed length
+      <span class="row">
+        <input type="number" id="bed-length" value="220" min="100" max="400" step="1">
+        <span class="unit">mm</span>
+      </span>
     </label>
 
     <label class="check">
@@ -150,6 +161,10 @@
       <label class="check">
         <input type="checkbox" id="headstock-ext" checked>
         Headstock extension — ¼″ flat past the nut, then a 45° taper (Strat style)
+      </label>
+      <label class="check">
+        <input type="checkbox" id="seam-keys">
+        Alignment pins at the split seams <span class="hint">(pin &amp; socket, 0.15 mm clearance)</span>
       </label>
       <label>
         Fretboard radius

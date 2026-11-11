@@ -14,7 +14,8 @@
     strings: $('strings'), frets: $('frets'), fretsValue: $('frets-value'),
     scalePreset: $('scale-preset'), scale: $('scale'),
     nutWidth: $('nut-width'), heelWidth: $('heel-width'),
-    split: $('split'), fret17: $('fret-17'), fretMode: $('fret-mode'),
+    split: $('split'), bedRow: $('bed-row'), bedLength: $('bed-length'),
+    seamKeys: $('seam-keys'), fret17: $('fret-17'), fretMode: $('fret-mode'),
     thickness: $('thickness'), fretHeight: $('fret-height'), tail: $('tail'),
     slotHeight: $('slot-height'), slotSlope: $('slot-slope'),
     nutScrew: $('nut-screw'), tailScrew: $('tail-screw'), roundTail: $('round-tail'),
@@ -40,7 +41,21 @@
 
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
+  // The split select encodes: '0' = one piece, '7' = one seam after
+  // fret 7, '5,12' = two seams (three pieces), 'auto' = let the
+  // geometry planner fit the pieces to the print bed.
+  function splitSelection() {
+    var v = els.split.value;
+    if (v === 'auto') return { frets: null, auto: true };
+    if (v.indexOf(',') !== -1) {
+      return { frets: v.split(',').map(function (s) { return parseInt(s, 10); }), auto: false };
+    }
+    var n = parseInt(v, 10) || 0;
+    return { frets: n > 0 ? [n] : null, auto: false };
+  }
+
   function readParams() {
+    var sel = splitSelection();
     return {
       scaleMm: clamp(num(els.scale, 23.5), 18, 30) * IN,
       strings: parseInt(els.strings.value, 10),
@@ -58,7 +73,10 @@
       leftHanded: els.leftHanded.checked,
       headstockExtMm: els.headstockExt.checked ? 6.35 : 0,
       radiusMm: parseFloat(els.fbRadius.value) || 0,
-      splitAfterFret: parseInt(els.split.value, 10) || 0,
+      splitAfterFrets: sel.frets,
+      autoSplit: sel.auto,
+      bedMm: sel.auto ? clamp(num(els.bedLength, 220), 100, 400) : 0,
+      seamKeys: els.seamKeys.checked,
       fretSteps: Fretboard.FRET_MODES[els.fretMode.value] || null,
       skipMarkers: els.fret17.checked ? [] : [17]
     };
@@ -125,7 +143,8 @@
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.textContent = multi
-        ? '⬇ Part ' + (i + 1) + ' — ' + (i === 0 ? 'nut end' : 'tail end') +
+        ? '⬇ Part ' + (i + 1) + ' — ' +
+          (i === 0 ? 'nut end' : i === result.pieces.length - 1 ? 'tail end' : 'middle') +
           ' (' + fmtIn(piece.lengthMm) + ')'
         : '⬇ Download STL';
       btn.addEventListener('click', function () { downloadSTL(rebasePiece(piece), fname); });
@@ -137,8 +156,9 @@
       fmtIn(meta.lengthMm) + ' long × ' + fmtIn(meta.nutWidthMm) + ' → ' +
       fmtIn(meta.tailWidthMm) + ' wide' +
       (multi
-        ? ' · Part 1: ' + fmtIn(result.pieces[0].lengthMm) + ' · Part 2: ' +
-          fmtIn(result.pieces[1].lengthMm) + ' — check they fit your print bed'
+        ? ' · ' + result.pieces.map(function (piece, i) {
+            return 'Part ' + (i + 1) + ': ' + fmtIn(piece.lengthMm);
+          }).join(' · ') + ' — check they fit your print bed'
         : '');
     els.holesOut.textContent = meta.holes.length + ' — ' +
       meta.holes.map(function (h) { return h.label; }).join(', ');
@@ -475,10 +495,14 @@
   els.leftHanded.addEventListener('change', rebuild);
   els.headstockExt.addEventListener('change', rebuild);
   els.fbRadius.addEventListener('change', rebuild);
-  els.split.addEventListener('change', rebuild);
+  function syncBedRow() { els.bedRow.hidden = els.split.value !== 'auto'; }
+  els.split.addEventListener('change', function () { syncBedRow(); rebuild(); });
+  els.bedLength.addEventListener('input', rebuild);
+  els.seamKeys.addEventListener('change', rebuild);
   els.fret17.addEventListener('change', rebuild);
   els.fretMode.addEventListener('change', rebuild);
 
+  syncBedRow();
   preview = createPreview(els.preview, els.previewFallback);
   rebuild();
 })();

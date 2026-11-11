@@ -364,12 +364,100 @@
     });
   }
 
+  // --- alignment keys at split seams -----------------------------------
+  // A pin on the nut-side piece plugs into a socket in the tail-side
+  // piece's head wall, so the two pieces register to each other when
+  // glued or screwed down. 0.15 mm radial clearance (socketR - pinR).
+  var KEY = { pinR: 1.6, socketR: 1.75, protrude: 3.5, embed: 1.5, depth: 3.7, segs: 16 };
+
+  function keyCircle(cx, cz, r) {
+    var pts = [];
+    for (var i = 0; i < KEY.segs; i++) {
+      var a = (i / KEY.segs) * Math.PI * 2;
+      pts.push([cx + r * Math.cos(a), cz + r * Math.sin(a)]);
+    }
+    return pts;
+  }
+
+  /** Closed pin cylinder along +y: base buried in the nut-side piece. */
+  function seamPin(cx, cz, ySeam) {
+    var yB = ySeam - KEY.embed, yT = ySeam + KEY.protrude;
+    var rb = keyCircle(cx, cz, KEY.pinR).map(function (pt) { return [pt[0], yB, pt[1]]; });
+    var rt = keyCircle(cx, cz, KEY.pinR).map(function (pt) { return [pt[0], yT, pt[1]]; });
+    var sides = [], caps = [];
+    for (var i = 0; i < KEY.segs; i++) {
+      var j = (i + 1) % KEY.segs;
+      pushTri(sides, rb[i], rt[i], rt[j]);
+      pushTri(sides, rb[i], rt[j], rb[j]);
+      pushTri(caps, [cx, yB, cz], rb[j], rb[i]);
+      pushTri(caps, [cx, yT, cz], rt[i], rt[j]);
+    }
+    sides = forceNormals(sides, function (n, gx, gy, gz) {
+      var rx = gx - cx, rz = gz - cz;
+      return n[0] * rx + n[2] * rz > 0;
+    });
+    caps = forceNormals(caps, function (n, gx, gy) {
+      return gy < (yB + yT) / 2 ? n[1] < 0 : n[1] > 0;
+    });
+    return sides.concat(caps);
+  }
+
+  /**
+   * A piece's head wall (the curtain under the top face's first chain)
+   * with circular socket holes cut into it, plus the socket tubes and
+   * their end caps. The wall is triangulated as a cross-section in the
+   * (x, z) plane with earcut holes; the tube rings reuse the exact
+   * hole vertices, so every edge is shared and the piece stays sealed.
+   */
+  function seamWallWithSockets(chain, sockets, y0, earcut, outward) {
+    var w = [];
+    var poly = chain.map(function (pt) { return [pt[0], pt[2]]; });
+    for (var bi = chain.length - 1; bi >= 0; bi--) poly.push([chain[bi][0], 0]);
+    var coords = [];
+    poly.forEach(function (pt) { coords.push(pt[0], pt[1]); });
+    var holeIdx = [], circles = [];
+    sockets.forEach(function (s) {
+      var pts = keyCircle(s.x, s.z, s.r);
+      holeIdx.push(coords.length / 2);
+      pts.forEach(function (pt) { coords.push(pt[0], pt[1]); });
+      circles.push(pts);
+    });
+    var idx = earcut(coords, holeIdx, 2);
+    for (var i = 0; i < idx.length; i += 3) {
+      pushTri(w,
+        [coords[idx[i] * 2], y0, coords[idx[i] * 2 + 1]],
+        [coords[idx[i + 1] * 2], y0, coords[idx[i + 1] * 2 + 1]],
+        [coords[idx[i + 2] * 2], y0, coords[idx[i + 2] * 2 + 1]]);
+    }
+    w = forceNormals(w, outward);
+    sockets.forEach(function (s, si) {
+      var pts = circles[si];
+      var sides = [], cap = [];
+      for (var ci = 0; ci < pts.length; ci++) {
+        var cj = (ci + 1) % pts.length;
+        var a0 = [pts[ci][0], y0, pts[ci][1]], a1 = [pts[cj][0], y0, pts[cj][1]];
+        var b0 = [pts[ci][0], y0 + KEY.depth, pts[ci][1]], b1 = [pts[cj][0], y0 + KEY.depth, pts[cj][1]];
+        pushTri(sides, a0, b0, b1);
+        pushTri(sides, a0, b1, a1);
+        pushTri(cap, [s.x, y0 + KEY.depth, s.z], b1, b0);
+      }
+      sides = forceNormals(sides, function (n, gx, gy, gz) {
+        var rx = gx - s.x, rz = gz - s.z;
+        return n[0] * rx + n[2] * rz < 0;
+      });
+      cap = forceNormals(cap, function (n) { return n[1] < 0; });
+      w = w.concat(sides, cap);
+    });
+    return w;
+  }
+
   /**
    * One printable piece of the board, spanning y in [y0, y1]: flat faces,
    * four side walls (the two cut faces become the piece's end walls), and
    * the cone + hole wall for each screw hole inside the range.
+   * `sockets` (optional) cuts alignment-key sockets into the y0 wall.
    */
-  function boardBody(p, holes, widthAt, y0, y1, stations, earcut, zTopAt) {
+  function boardBody(p, holes, widthAt, y0, y1, stations, earcut, zTopAt, sockets) {
     var T = p.thicknessMm;
     var curved = !!(p.radiusMm || 0);
     var tris = [];
@@ -407,7 +495,14 @@
       return forceNormals(w, outward);
     }
     tris = tris.concat(wallStrip(topFace.boundary.left), wallStrip(topFace.boundary.right));
-    var endWalls = wallStrip(topFace.boundary.first).concat(wallStrip(topFace.boundary.last));
+    var firstChain = topFace.boundary.first;
+    var chainOk = firstChain.length >= 2 && firstChain.every(function (pt, ci) {
+      return ci === 0 || pt[0] > firstChain[ci - 1][0];
+    });
+    var firstWall = sockets && sockets.length && chainOk
+      ? seamWallWithSockets(firstChain, sockets, y0, earcut, outward)
+      : wallStrip(firstChain);
+    var endWalls = firstWall.concat(wallStrip(topFace.boundary.last));
 
     // countersink cone + straight hole wall for each screw hole —
     // returned separately ('recess') so the preview can paint them as
@@ -449,6 +544,11 @@
    *   stringGaugesIn (nut slot gauges, low->high),
    *   leftHanded (bool: mirror the nut slot order for a left-handed build),
    *   splitAfterFret (0 = one piece; N = two pieces, split just past fret N),
+   *   splitAfterFrets (list of frets to split after — up to 3 pieces;
+   *   takes precedence over splitAfterFret when non-empty),
+   *   autoSplit + bedMm (plan the fewest seams, max 3 pieces, so every
+   *   piece fits the print bed; used when no split is specified),
+   *   seamKeys (alignment pin + socket at each seam, 0.15 mm clearance),
    *   fretSteps (semitone classes that get a ridge; null = chromatic),
    *   skipMarkers (fret numbers whose marker screw hole is omitted;
    *   default [17] — the spacing up there earns its keep better as wood)
@@ -501,6 +601,19 @@
     }
     range('fretBaseWidthMm', p.fretBaseWidthMm, 0.5, 8);
     intRange('splitAfterFret', p.splitAfterFret, 0, 36);
+    if (p.splitAfterFrets != null) {
+      if (!Array.isArray(p.splitAfterFrets)) {
+        throw new Error('Invalid splitAfterFrets: expected an array of fret numbers, or null');
+      }
+      p.splitAfterFrets.forEach(function (f, i) {
+        intRange('splitAfterFrets[' + i + ']', f, 1, 36);
+        if (i > 0 && f <= p.splitAfterFrets[i - 1]) {
+          throw new Error('Invalid splitAfterFrets: frets must be in increasing order, got ' +
+            p.splitAfterFrets.join(', '));
+        }
+      });
+    }
+    range('bedMm', p.bedMm, 0, 2000);
     if (p.stringGaugesIn != null) {
       if (!Array.isArray(p.stringGaugesIn) || p.stringGaugesIn.length === 0) {
         throw new Error('Invalid stringGaugesIn: expected a non-empty array of string gauges (inches)');
@@ -513,6 +626,61 @@
     if (p.skipMarkers != null && !Array.isArray(p.skipMarkers)) {
       throw new Error('Invalid skipMarkers: expected an array of fret numbers');
     }
+  }
+
+  /**
+   * Auto split planner: choose the fewest seams (at most 2, so at most
+   * 3 pieces) so every piece fits bedMm, with seams just past a fret
+   * ridge and piece lengths as even as the fret lines allow (minimise
+   * the longest piece, then the spread). Returns { splitFrets,
+   * pieceLengthsMm }. splitFrets is empty when one piece fits; when
+   * even 3 pieces can't fit, it's the most even 3-piece split and the
+   * build warns about the overflow.
+   */
+  function planSplits(params, bedMm) {
+    var p = Object.assign({
+      tailMm: 20, nutDepthMm: 5, headstockExtMm: 0, thicknessMm: 5,
+      fretBaseWidthMm: 2.4
+    }, params);
+    var distances = [];
+    for (var n = 0; n <= p.frets; n++) distances.push(fretDistance(p.scaleMm, n));
+    var start = -p.nutDepthMm - ((p.headstockExtMm || 0) > 0 ? p.headstockExtMm + p.thicknessMm : 0);
+    var end = distances[p.frets] + p.tailMm;
+    var cand = [];
+    for (var f = 1; f < p.frets; f++) cand.push({ fret: f, y: distances[f] + p.fretBaseWidthMm / 2 });
+    function evaluate(seamList) {
+      var b = [start].concat(seamList.map(function (s) { return s.y; }), [end]);
+      var lens = [];
+      for (var i = 0; i < b.length - 1; i++) lens.push(b[i + 1] - b[i]);
+      var mean = (end - start) / lens.length;
+      return {
+        splitFrets: seamList.map(function (s) { return s.fret; }),
+        pieceLengthsMm: lens,
+        max: Math.max.apply(null, lens),
+        dev: lens.reduce(function (s2, L) { return s2 + (L - mean) * (L - mean); }, 0)
+      };
+    }
+    function better(a, b) {
+      if (a.max < b.max - 1e-9) return true;
+      if (a.max > b.max + 1e-9) return false;
+      return a.dev < b.dev;
+    }
+    var best1 = evaluate([]);
+    if (best1.max <= bedMm) return best1;
+    var best2 = null;
+    cand.forEach(function (c) {
+      var e = evaluate([c]);
+      if (!best2 || better(e, best2)) best2 = e;
+    });
+    if (best2 && best2.max <= bedMm) return best2;
+    var best3 = null;
+    for (var i = 0; i < cand.length; i++) {
+      for (var j = i + 1; j < cand.length; j++) {
+        var e3 = evaluate([cand[i], cand[j]]);
+        if (!best3 || better(e3, best3)) best3 = e3;
+      }
+    }
+    return best3 || best2 || best1;
   }
 
   function buildFretboard(params, earcut) {
@@ -533,6 +701,10 @@
       stringGaugesIn: null,
       fretBaseWidthMm: 2.4,
       splitAfterFret: 0,
+      splitAfterFrets: null,
+      autoSplit: false,
+      bedMm: 0,
+      seamKeys: false,
       fretSteps: null,
       skipMarkers: [17]
     }, params);
@@ -609,25 +781,57 @@
     }
 
     // --- split into printable pieces ------------------------------------
-    // The seam sits just past the split fret's ridge (on its tail side),
-    // so the ridge itself hides the joint line and every fret stays whole
-    // on one piece. Both pieces screw to the same neck, which is what
-    // registers them to each other.
-    var splitY = null;
-    if (p.splitAfterFret > 0) {
-      if (p.splitAfterFret < p.frets) {
-        splitY = distances[p.splitAfterFret] + p.fretBaseWidthMm / 2;
-      } else {
-        warnings.push('Split not applied: with ' + p.frets + ' frets there is no fret ' +
-          p.splitAfterFret + ' to split after.');
-      }
-    }
+    // Each seam sits just past its fret's ridge (on its tail side), so
+    // the ridge itself hides the joint line and every fret stays whole
+    // on one piece. All pieces screw to the same neck, which is what
+    // registers them to each other. Splits come from splitAfterFrets
+    // (a list — up to 3 pieces), the legacy splitAfterFret (one seam),
+    // or the Auto planner (autoSplit + bedMm) when neither is given.
     // The board blank starts nutDepthMm BEFORE the scale zero: the nut
     // sits on the headstock side of y=0, so its fret-side face — the
     // point the strings actually leave from — is exactly at y=0 and
     // every fret distance is measured from the true break point.
     var boardStart = -p.nutDepthMm;
-    var ranges = splitY === null ? [[boardStart, length]] : [[boardStart, splitY], [splitY, length]];
+    var requestedSplits = [];
+    if (Array.isArray(p.splitAfterFrets) && p.splitAfterFrets.length) {
+      requestedSplits = p.splitAfterFrets.slice();
+    } else if (p.splitAfterFret > 0) {
+      requestedSplits = [p.splitAfterFret];
+    } else if (p.autoSplit && p.bedMm > 0) {
+      requestedSplits = planSplits(p, p.bedMm).splitFrets;
+    }
+    var seams = []; // [{fret, y}] effective seams, in order
+    requestedSplits.forEach(function (f) {
+      if (f < p.frets) {
+        seams.push({ fret: f, y: distances[f] + p.fretBaseWidthMm / 2 });
+      } else {
+        warnings.push('Split not applied after fret ' + f + ': with ' + p.frets +
+          ' frets there is no fret ' + f + ' to split after.');
+      }
+    });
+    var seamYs = seams.map(function (s) { return s.y; });
+    var splitY = seamYs.length ? seamYs[0] : null;
+    var bounds = [boardStart].concat(seamYs, [length]);
+    var ranges = [];
+    for (var ri = 0; ri < bounds.length - 1; ri++) ranges.push([bounds[ri], bounds[ri + 1]]);
+
+    // Alignment keys per seam: two pins across the width at mid
+    // thickness, when requested and the seam cross-section has room
+    // (enough width, thickness, and material above the socket).
+    var seamCircles = seams.map(function (s) {
+      if (!p.seamKeys) return null;
+      var w = widthAt(s.y), cz = p.thicknessMm / 2;
+      var xs = [-w / 4, w / 4];
+      var ok = w >= 24 && p.thicknessMm >= 4.2 && xs.every(function (x) {
+        return zTopAt(x) - (cz + KEY.socketR) >= 0.3 && cz - KEY.socketR >= 0.3;
+      });
+      if (!ok) {
+        warnings.push('Alignment pins skipped at the seam after fret ' + s.fret +
+          ' — the board is too narrow or thin there.');
+        return null;
+      }
+      return xs.map(function (x) { return { x: x, z: cz }; });
+    });
 
     var embed = 0.6;
     var groupBody = [], groupEndWalls = [], groupRecess = [], groupFeatures = [];
@@ -674,7 +878,10 @@
         stations.push(length - r);
       }
 
-      var body = boardBody(p, pieceHoles, wFn, y0, y1, stations, earcut, zTopAt);
+      var pieceSockets = pieceIdx > 0 && seamCircles[pieceIdx - 1]
+        ? seamCircles[pieceIdx - 1].map(function (c) { return { x: c.x, z: c.z, r: KEY.socketR }; })
+        : null;
+      var body = boardBody(p, pieceHoles, wFn, y0, y1, stations, earcut, zTopAt, pieceSockets);
       coneDepth = body.coneDepth;
       var ptris = body.tris.concat(body.endWalls, body.recess);
       groupBody = groupBody.concat(body.tris);
@@ -920,12 +1127,30 @@
         ptris = ptris.concat(loftProfileX(wProfile, 0, 0, wSecs));
       }
 
+      // alignment pins on this piece's tail seam (they plug into the
+      // next piece's sockets); appended after the recess so they land
+      // in the features slice below
+      if (pieceIdx < ranges.length - 1 && seamCircles[pieceIdx]) {
+        seamCircles[pieceIdx].forEach(function (c) {
+          ptris = ptris.concat(seamPin(c.x, c.z, y1));
+        });
+      }
+
       groupFeatures = groupFeatures.concat(ptris.slice(body.tris.length + body.endWalls.length + body.recess.length));
       var extReach = (p.headstockExtMm || 0) > 0 ? p.headstockExtMm + p.thicknessMm : 0;
       var pieceY0 = pieceIdx === 0 ? y0 - extReach : y0;
       pieces.push({ y0: pieceY0, y1: y1, lengthMm: y1 - pieceY0, triangles: ptris });
       tris = tris.concat(ptris);
     });
+
+    if (p.bedMm > 0) {
+      pieces.forEach(function (piece, pi) {
+        if (piece.lengthMm > p.bedMm + 0.01) {
+          warnings.push('Part ' + (pi + 1) + ' is ' + piece.lengthMm.toFixed(0) +
+            ' mm long — longer than the ' + p.bedMm + ' mm print bed.');
+        }
+      });
+    }
 
     return {
       triangles: tris,
@@ -945,6 +1170,9 @@
         skippedMarkers: skippedMarkers,
         coneDepthMm: coneDepth,
         splitYMm: splitY,
+        splitYMs: seamYs,
+        splitFrets: seams.map(function (s) { return s.fret; }),
+        seamKeys: !!p.seamKeys,
         keptFrets: keptFrets,
         radiusMm: radiusR,
         stringGaugesIn: gauges,
@@ -962,6 +1190,7 @@
     STRING_GAUGES: STRING_GAUGES,
     FRET_MODES: FRET_MODES,
     fretDistance: fretDistance,
+    planSplits: planSplits,
     buildFretboard: buildFretboard,
     signedVolume: signedVolume
   };

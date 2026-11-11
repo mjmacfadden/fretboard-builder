@@ -52,7 +52,12 @@ case, and a worn board becomes a fresh fret job for a few cents of filament.
   piece's length shown so you can check it against your bed. Each part's
   STL is exported in its own local coordinates (starting at its own
   origin), so both parts can go on one slicer plate together. Split point
-  options: after fret 5, 7, 9 or 12, or no split.
+  options: after fret 5, 7, 9 or 12, three-piece splits (after frets
+  5 & 12 or 7 & 14), or **Auto** — give it your print-bed length and it
+  picks the fewest seams, on fret lines, that make every piece fit.
+  Under *Advanced*, **alignment pins** add a pin-and-socket key
+  (0.15 mm clearance) at each seam so the pieces register to each other
+  when glued.
 - **Fret modes** (next to the Frets slider): Chromatic (every fret),
   Diatonic (major scale only), Pentatonic (minor pentatonic), and
   Pentatonic Plus — Del Puckett's layout, which his site defines as the
