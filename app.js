@@ -22,6 +22,7 @@
     leftHanded: $('left-handed'),
     headstockExt: $('headstock-ext'),
     fbRadius: $('fb-radius'),
+    edgeFillet: $('edge-fillet'),
     downloads: $('downloads'), filename: $('filename'),
     sizeOut: $('size-out'), holesOut: $('holes-out'), slotsOut: $('slots-out'),
     warnings: $('warnings'),
@@ -73,6 +74,7 @@
       leftHanded: els.leftHanded.checked,
       headstockExtMm: els.headstockExt.checked ? 6.35 : 0,
       radiusMm: parseFloat(els.fbRadius.value) || 0,
+      edgeFilletMm: clamp(num(els.edgeFillet, 1), 0, 2),
       splitAfterFrets: sel.frets,
       autoSplit: sel.auto,
       bedMm: sel.auto ? clamp(num(els.bedLength, 220), 100, 400) : 0,
@@ -499,6 +501,7 @@
   els.split.addEventListener('change', function () { syncBedRow(); rebuild(); });
   els.bedLength.addEventListener('input', rebuild);
   els.seamKeys.addEventListener('change', rebuild);
+  els.edgeFillet.addEventListener('change', rebuild);
   els.fret17.addEventListener('change', rebuild);
   els.fretMode.addEventListener('change', rebuild);
 

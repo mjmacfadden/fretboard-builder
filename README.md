@@ -67,6 +67,12 @@ case, and a worn board becomes a fresh fret job for a few cents of filament.
 - The **tail corners are rounded to a ¼″ radius** by default (an option
   under *Advanced*), so the tail drops into a routed neck pocket — router
   bits don't cut square corners.
+- The two **long top edges are rounded over** — 1 mm radius by default
+  (*Advanced* → Top edge round-over: off, 0.5–2 mm), so the printed board
+  isn't sharp under the hand. The bottom face and its edges stay sharp and
+  flat so the board sits flush on the neck, and the end/seam faces stay
+  flat. Frets and the nut are shortened by the same radius at each end,
+  so they finish on the flat top instead of hanging over the curve.
 - **Headstock extension** (*Advanced*, off by default): a Strat-style
   tongue past the nut — ¼″ of flat at full thickness, then a 45° taper
   down the full thickness to the tip (about 0.45″ total reach).

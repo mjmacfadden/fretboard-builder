@@ -91,7 +91,9 @@ approx(rayDown(trisA, 10, metaA.fretDistancesMm[5] + 0.6), T + 0.67, 0.03, 'fret
 // the way down through the board surface — no end wall, no point.
 {
   const d5 = metaA.fretDistancesMm[5];
-  const half5 = (metaA.nutWidthMm + (44.45 - metaA.nutWidthMm) * (d5 / metaA.fretDistancesMm[20])) / 2 - 0.4;
+  // frets stop featureInsetMm (= the 1 mm default edge fillet) short of
+  // the usual 0.4 mm edge clearance, so they finish on the flat top
+  const half5 = (metaA.nutWidthMm + (44.45 - metaA.nutWidthMm) * (d5 / metaA.fretDistancesMm[20])) / 2 - 0.4 - metaA.featureInsetMm;
   approx(rayDown(trisA, half5 - 0.75, d5), T + 0.79, 0.04, 'fret 5 dome near full height 0.75mm in');
   approx(rayDown(trisA, half5 - 0.3, d5), T + 0.38, 0.04, 'fret 5 dome mid-curve');
   approx(rayDown(trisA, half5 - 0.05, d5), T, 0.01, 'fret 5 dome meets the board at the tip');
@@ -150,7 +152,10 @@ console.log('A ok:', count, 'triangles, STL', bytes.length, 'bytes');
     if (v.every(p => Math.abs(p[2]) < 1e-9) && nz < -0.999 * nl) { botArea += area; maxFaceEdge = Math.max(maxFaceEdge, edge); }
   }
   const cornerCut = 2 * (6.35 * 6.35 - Math.PI * 6.35 * 6.35 / 4); // two rounded tail corners
-  const expTop = planArea - metaA.holes.length * polyArea(R2) - cornerCut;
+  // the flat (z = T) part of the top stops at the fillet tangent lines:
+  // a strip edgeFilletMm wide comes off each long edge
+  const rF = metaA.edgeFilletMm;
+  const expTop = planArea - 2 * rF * (L + 5) - metaA.holes.length * polyArea(R2) - cornerCut;
   const expBot = planArea - metaA.holes.length * polyArea(R1) - cornerCut;
   assert.ok(Math.abs(topArea - expTop) / expTop < 0.005,
     `top face area ${topArea.toFixed(0)} vs expected ${expTop.toFixed(0)} — gaps or overlaps in triangulation`);
@@ -171,9 +176,14 @@ console.log('A ok:', count, 'triangles, STL', bytes.length, 'bytes');
       // outside the rounded tail corners there is (correctly) no board
       if (y > L - 6.35 && Math.abs(x) > wL / 2 - 6.35 &&
           Math.hypot(Math.abs(x) - (wL / 2 - 6.35), y - (L - 6.35)) > 6.0) continue;
+      // inside the fillet strip the surface follows the quarter-circle
+      // round-over: expected z = T - (r - sqrt(r^2 - d^2))
+      const dF = Math.abs(x) - (widthAt(y) / 2 - rF);
+      if (dF > 0 && y > L - 6.35) continue; // fillet around the tail corners
+      const zExp = dF > 0 ? T - (rF - Math.sqrt(Math.max(0, rF * rF - dF * dF))) : T;
       const hit = rayDown(trisA, x, y);
-      assert.ok(hit !== null && Math.abs(hit - T) < 0.01,
-        `coverage gap at (${x.toFixed(1)}, ${y.toFixed(1)}): hit ${hit}`);
+      assert.ok(hit !== null && Math.abs(hit - zExp) < (dF > 0 ? 0.03 : 0.01),
+        `coverage gap at (${x.toFixed(1)}, ${y.toFixed(1)}): hit ${hit}, expected ${zExp}`);
       checked++;
     }
   }
@@ -272,7 +282,8 @@ console.log('E2 ok: split past last fret degrades to one piece with a warning');
   const cx = wL / 2 - R, cy = L - R;
   // inside the corner arc: board present at full height
   approx(rayDown(trisA, cx, L - 0.5), T, 0.01, 'tail end centre present');
-  approx(rayDown(trisA, wL / 2 - 0.5, cy), T, 0.01, 'tail side at arc start present');
+  // (sampled inboard of the 1 mm top-edge fillet strip)
+  approx(rayDown(trisA, wL / 2 - 0.5 - metaA.edgeFilletMm, cy), T, 0.01, 'tail side at arc start present');
   // the square corner itself is cut away (0.8 mm in from both edges is
   // ~7.9 mm from the arc centre — well outside the 6.35 mm radius)
   assert.strictEqual(rayDown(trisA, wL / 2 - 0.8, L - 0.8), null,
@@ -285,7 +296,7 @@ console.log('E2 ok: split past last fret degrades to one piece with a warning');
     nutWidthMm: 1.375 * 25.4, heelWidthMm: 1.75 * 25.4,
     tailCornerRadiusMm: 0
   }, earcut);
-  approx(rayDown(F2.triangles, wL / 2 - 0.8, L - 0.8), T, 0.01, 'square corner present when radius off');
+  approx(rayDown(F2.triangles, wL / 2 - 0.8 - F2.meta.edgeFilletMm, L - 0.8), T, 0.01, 'square corner present when radius off');
   console.log('F ok: 1/4in rounded tail corners on by default, square when off');
 }
 
@@ -414,6 +425,9 @@ console.log('E2 ok: split past last fret degrades to one piece with a warning');
     thicknessMm: 0.2 * 25.4, nutHeightMm: 2
   }, earcut);
   const nutTop = 0.2 * 25.4 + 2.04; // 7.12 — set by the .042 floor + its 60% sit
+  // the nut ends sit ki (= the 1 mm edge fillet) in from the board edge
+  const ki = K.meta.nut.insetMm;
+  assert.ok(Math.abs(ki - 1) < 1e-9, 'nut inset = default 1 mm fillet: ' + ki);
   // raised segment between the center and +1/2in slots: full height
   approx(rayDown(K.triangles, 6, -2.5), nutTop, 0.02, 'nut: full height at mid-depth');
   // the long front/back top edges stay SQUARE — full height right up
@@ -422,11 +436,11 @@ console.log('E2 ok: split past last fret degrades to one piece with a warning');
   approx(rayDown(K.triangles, 6, -0.2), nutTop, 0.02, 'nut: back top edge square');
   // the left/right ENDS roll over on a 1.2mm radius: full height just
   // inside the roll, stepped down near the outer faces
-  approx(rayDown(K.triangles, 15, -2.5), nutTop, 0.02, 'nut: end segment top is flat across its span');
-  approx(rayDown(K.triangles, 17, -2.5), nutTop, 0.02, 'nut: full height inside the end roll');
-  approx(rayDown(K.triangles, 18.0, -2.5), nutTop - 0.01, 0.03, 'nut: end roll near its top');
-  approx(rayDown(K.triangles, 18.9, -2.5), nutTop - 0.62, 0.03, 'nut: end roll near the face');
-  approx(rayDown(K.triangles, -18.9, -2.5), nutTop - 0.62, 0.03, 'nut: left end rolls too');
+  approx(rayDown(K.triangles, 15 - ki, -2.5), nutTop, 0.02, 'nut: end segment top is flat across its span');
+  approx(rayDown(K.triangles, 17 - ki, -2.5), nutTop, 0.02, 'nut: full height inside the end roll');
+  approx(rayDown(K.triangles, 18.0 - ki, -2.5), nutTop - 0.01, 0.03, 'nut: end roll near its top');
+  approx(rayDown(K.triangles, 18.9 - ki, -2.5), nutTop - 0.62, 0.03, 'nut: end roll near the face');
+  approx(rayDown(K.triangles, -(18.9 - ki), -2.5), nutTop - 0.62, 0.03, 'nut: left end rolls too');
   // slot floors stay exact (string seating unchanged)
   approx(rayDown(K.triangles, 0, -0.25), nutTop - 0.77, 0.02, 'nut: slot floor near the face at its target (crown + 0.40)');
   console.log('K ok: nut ends rounded over (1.2mm radius), long edges square, slot floors exact');
@@ -444,11 +458,11 @@ console.log('E2 ok: split past last fret degrades to one piece with a warning');
     }, earcut);
     const nutTopL = 5.08 + 2.03; // from the .042 floor (crown + 0.50) + 60% sit
     // fret-side face at y=0: nut material just behind it, none in front
-    approx(rayDown(Lb.triangles, -17, -0.3), nutTopL, 0.02, `L ${scaleIn}in: nut present just behind the face`);
+    approx(rayDown(Lb.triangles, -17 + Lb.meta.nut.insetMm, -0.3), nutTopL, 0.02, `L ${scaleIn}in: nut present just behind the face`);
     approx(rayDown(Lb.triangles, -17, 0.3), 5.08, 0.02, `L ${scaleIn}in: no nut material past the face (board top only)`);
     approx(rayDown(Lb.triangles, 0, 0.3), 5.08, 0.02, `L ${scaleIn}in: slot does not cross the face either`);
     // the board blank extends under the nut to y=-5
-    approx(rayDown(Lb.triangles, -17, -4.9), nutTopL, 0.02, `L ${scaleIn}in: nut sits on board at its back edge`);
+    approx(rayDown(Lb.triangles, -17 + Lb.meta.nut.insetMm, -4.9), nutTopL, 0.02, `L ${scaleIn}in: nut sits on board at its back edge`);
     assert.ok(Lb.pieces[0].y0 <= -5 + 1e-9, `L ${scaleIn}in: piece starts at/behind the nut back`);
     // fret 12 sits at exactly half the scale measured from the face
     approx(Lb.meta.fretDistancesMm[12], scale / 2, 0.01, `L ${scaleIn}in: fret 12 distance = scale/2 from the face`);
@@ -739,6 +753,173 @@ function boundaryEdgeCount(tris) {
     assert.strictEqual(boundaryEdgeCount(piece.triangles), 0, 'Q keys: radiused piece ' + (pi + 1) + ' has no boundary edges');
   });
   console.log('Q ok: 2- and 3-piece splits sealed and backward compatible; Auto fits 24/25/25.5in boards to a 220 bed; alignment pins + sockets sealed');
+}
+
+// === Config R: top-edge fillet (round-over) ==============================
+// The two long TOP edges round over on edgeFilletMm (default 1 mm). The
+// bottom face stays flat at z = 0 with an unchanged footprint; frets and
+// the nut are shortened by the radius at each end so nothing overhangs
+// or pokes out of the curve; r = 0 reproduces the sharp-edged board.
+{
+  const qBase = { scaleMm: 596.9, strings: 3, frets: 20, nutWidthMm: 38.1, heelWidthMm: 44.45, thicknessMm: 5.08 };
+  const nutW = 38.1, heelW = 44.45;
+  const build = (extra) => Fretboard.buildFretboard(Object.assign({}, qBase, extra), earcut);
+  const def = build({});
+  assert.strictEqual(def.meta.edgeFilletMm, 1, 'default edge fillet is 1 mm');
+  assert.strictEqual(def.meta.featureInsetMm, 1, 'default fret/nut inset = fillet radius');
+
+  // bottom-face area (z = 0, facing down) of the body, and min z overall
+  function bottomStats(tris) {
+    let area = 0, minZ = Infinity;
+    for (let i = 0; i < tris.length; i += 9) {
+      for (let k = 0; k < 3; k++) minZ = Math.min(minZ, tris[i + k * 3 + 2]);
+      const z0 = tris[i + 2], z1 = tris[i + 5], z2 = tris[i + 8];
+      if (Math.abs(z0) > 1e-9 || Math.abs(z1) > 1e-9 || Math.abs(z2) > 1e-9) continue;
+      const ux = tris[i + 3] - tris[i], uy = tris[i + 4] - tris[i + 1];
+      const wx = tris[i + 6] - tris[i], wy = tris[i + 7] - tris[i + 1];
+      const nz = ux * wy - uy * wx;
+      if (nz < 0) area += -nz / 2;
+    }
+    return { area, minZ };
+  }
+  // top-face height at a point, ignoring features (frets/nut)
+  const halfAt = (y) => (nutW + (heelW - nutW) * (Math.max(y, 0) / def.meta.lastFretYMm)) / 2;
+  const filletTop = (x, y, r, T) => {
+    const d = Math.abs(x) - (halfAt(y) - r);
+    if (d <= 0) return T;
+    return T - (r - Math.sqrt(Math.max(0, r * r - Math.min(d, r) ** 2)));
+  };
+
+  const variants = [
+    ['flat', {}],
+    ['12in radius', { radiusMm: 304.8 }],
+    ['headstock ext + split 7', { headstockExtMm: 6.35, splitAfterFret: 7 }],
+    ['radius + ext + split', { radiusMm: 304.8, headstockExtMm: 6.35, splitAfterFret: 7 }],
+    ['6-string', { strings: 6, frets: 22, nutWidthMm: 44.45, heelWidthMm: 50.8 }]
+  ];
+  for (const [vname, vcfg] of variants) {
+    const zero = build(Object.assign({ edgeFilletMm: 0 }, vcfg));
+    const b0 = bottomStats(zero.triangles);
+    for (const r of [0, 1, 2]) {
+      const Q = build(Object.assign({ edgeFilletMm: r }, vcfg));
+      const tag = `R ${vname} r=${r}`;
+      assert.strictEqual(boundaryEdgeCount(Q.triangles), 0, `${tag}: open edges`);
+      Q.pieces.forEach((pc, pi) => assert.strictEqual(boundaryEdgeCount(pc.triangles), 0, `${tag} piece ${pi + 1}: open edges`));
+      const bs = bottomStats(Q.triangles);
+      assert.ok(Math.abs(bs.minZ) < 1e-9, `${tag}: nothing below z=0 (min z ${bs.minZ})`);
+      assert.ok(Math.abs(bs.area - b0.area) < 1e-6 * b0.area,
+        `${tag}: bottom footprint changed (${bs.area.toFixed(3)} vs ${b0.area.toFixed(3)} mm^2)`);
+      // nut slot floors / top unchanged
+      assert.deepStrictEqual(Q.meta.nut.floorsMm, zero.meta.nut.floorsMm, `${tag}: slot floors unchanged`);
+      assert.strictEqual(Q.meta.nut.topMm, zero.meta.nut.topMm, `${tag}: nut top unchanged`);
+    }
+  }
+
+  // flat board, r = 1 and 2: surface profile across the width, frets, nut
+  for (const r of [1, 2]) {
+    const Q = build({ edgeFilletMm: r });
+    const T = 5.08, tq = Q.triangles;
+    const y = (Q.meta.fretDistancesMm[3] + Q.meta.fretDistancesMm[4]) / 2 + 3; // open board
+    const h = halfAt(y);
+    approx(rayDown(tq, h - r - 0.05, y), T, 0.005, `R r=${r}: full height at the tangent line`);
+    approx(rayDown(tq, h - r / 2, y), filletTop(h - r / 2, y, r, T), 0.02, `R r=${r}: mid-fillet on the arc`);
+    // on an arc sample vertex (75 deg) the surface is exact; right at the
+    // edge it is a 15-deg chord of the near-vertical arc (<= ~0.15 mm low)
+    const x75 = h - r + r * Math.sin(75 * Math.PI / 180);
+    approx(rayDown(tq, -x75, y), filletTop(x75, y, r, T), 0.01, `R r=${r}: arc vertex on the true circle`);
+    approx(rayDown(tq, -(h - 0.02), y), filletTop(h - 0.02, y, r, T), 0.15, `R r=${r}: edge drops ~r`);
+    // fret crowns unchanged at the centre; fret ends pulled in by r
+    for (const n of [1, 5, 12]) {
+      const d = Q.meta.fretDistancesMm[n];
+      approx(rayDown(tq, 0, d), T + 0.9, 0.01, `R r=${r}: fret ${n} crown height unchanged`);
+    }
+    // no fret / nut vertex outside the filleted top profile
+    const F = Q.groups.features;
+    let worst = -Infinity;
+    for (let i = 0; i < F.length; i += 3) {
+      const x = F[i], yy = F[i + 1], z = F[i + 2];
+      if (Math.abs(x) <= halfAt(yy) - r + 1e-6) continue; // over the flat top
+      worst = Math.max(worst, z - filletTop(x, yy, r, T)); // must be buried
+    }
+    assert.ok(worst <= 1e-6, `R r=${r}: a fret/nut vertex pokes out of the round-over by ${worst.toFixed(4)} mm`);
+    // fret length: today's length minus 2r
+    const Z = build({ edgeFilletMm: 0 });
+    const span = (res, n) => {
+      const d = res.meta.fretDistancesMm[n]; let mx = 0; const Fz = res.groups.features;
+      for (let i = 0; i < Fz.length; i += 3) if (Math.abs(Fz[i + 1] - d) < 1.3 && Fz[i + 1] > 1) mx = Math.max(mx, Math.abs(Fz[i]));
+      return mx;
+    };
+    approx(span(Z, 10) - span(Q, 10), r, 1e-6, `R r=${r}: each fret end pulled in by r`);
+  }
+  // 0 mm radius = sharp board: full height right at the edge
+  const Q0 = build({ edgeFilletMm: 0 });
+  approx(rayDown(Q0.triangles, halfAt(60) - 0.02, 60), 5.08, 0.005, 'Q r=0: sharp edge (full height at the edge)');
+  // split seam: both pieces' end walls carry the same rounded profile
+  const S = build({ splitAfterFret: 7 });
+  const sy = S.meta.splitYMm;
+  const prof = (pc) => {
+    const pts = new Set();
+    for (let i = 0; i < pc.triangles.length; i += 3) {
+      // fillet-zone points only (fret 7's base touches the seam plane too)
+      if (Math.abs(pc.triangles[i + 1] - sy) < 1e-9 && Math.abs(pc.triangles[i]) > halfAt(sy) - 1 - 1e-6) pts.add(pc.triangles[i].toFixed(5) + ',' + pc.triangles[i + 2].toFixed(5));
+    }
+    return [...pts].sort();
+  };
+  assert.ok(prof(S.pieces[0]).length >= 2 * 7, 'Q split: seam carries the fillet arc samples');
+  assert.deepStrictEqual(prof(S.pieces[0]), prof(S.pieces[1]), 'Q split: seam faces match vertex for vertex');
+  // over-large radius on a thin radiused board is clamped with a warning
+  const thin = build({ edgeFilletMm: 3, thicknessMm: 3.6, radiusMm: 184.15 });
+  assert.ok(thin.meta.edgeFilletMm < 3 && thin.meta.warnings.some(w => /round-over reduced/.test(w)),
+    'R: fillet clamped on a thin radiused board');
+  // seam alignment pins + sockets with the round-over: 3-piece boards,
+  // flat / radiused / extension, r = 0, 1, 2. Every piece sealed, pins
+  // present, every pin vertex (and so every socket, 0.15mm larger) at
+  // least 0.3mm under the FINISHED (filleted) top and inside the edges,
+  // and each seam's rounded top profile identical on both pieces.
+  for (const [kname, kcfg] of [
+    ['flat', {}],
+    ['12in radius', { radiusMm: 304.8 }],
+    ['7.25in radius + ext', { radiusMm: 184.15, headstockExtMm: 6.35 }]
+  ]) {
+    for (const r of [0, 1, 2]) {
+      const K3 = build(Object.assign({ splitAfterFrets: [5, 12], seamKeys: true, edgeFilletMm: r }, kcfg));
+      const tag = `R keys ${kname} r=${r}`;
+      assert.strictEqual(K3.pieces.length, 3, `${tag}: 3 pieces`);
+      assert.ok(!K3.meta.warnings.some(w => /pins skipped/.test(w)), `${tag}: pins not skipped`);
+      K3.pieces.forEach((pc, pi) => assert.strictEqual(boundaryEdgeCount(pc.triangles), 0, `${tag} piece ${pi + 1}: open edges`));
+      const R0 = kcfg.radiusMm || 0;
+      const sagQ = (x) => R0 ? R0 - Math.sqrt(R0 * R0 - x * x) : 0;
+      K3.meta.splitYMs.forEach((sy, si) => {
+        const hw = halfAt(sy);
+        // pin vertices: the cylinders reaching past the seam into the next piece
+        const tr = K3.pieces[si].triangles;
+        let pinPts = 0, worstTop = Infinity, worstSide = Infinity;
+        for (let i = 0; i < tr.length; i += 3) {
+          if (tr[i + 1] <= sy + 1e-6) continue;
+          pinPts++;
+          const x = tr[i], z = tr[i + 2];
+          const top = filletTop(x, sy, r, 5.08) - sagQ(x);
+          worstTop = Math.min(worstTop, top - (z + 0.15));
+          worstSide = Math.min(worstSide, hw - (Math.abs(x) + 0.15));
+        }
+        assert.ok(pinPts > 0, `${tag} seam ${si + 1}: pins present`);
+        assert.ok(worstTop >= 0.3 - 1e-6, `${tag} seam ${si + 1}: socket only ${worstTop.toFixed(3)} mm under the round-over`);
+        assert.ok(worstSide >= 0.3, `${tag} seam ${si + 1}: socket too close to the side`);
+        // seam faces stay flat and share the rounded top profile
+        const profAt = (pc) => {
+          const pts = new Set();
+          for (let i = 0; i < pc.triangles.length; i += 3) {
+            if (Math.abs(pc.triangles[i + 1] - sy) < 1e-9 && Math.abs(pc.triangles[i]) > hw - Math.max(r, 0.01) - 1e-6) {
+              pts.add(pc.triangles[i].toFixed(5) + ',' + pc.triangles[i + 2].toFixed(5));
+            }
+          }
+          return [...pts].sort();
+        };
+        assert.deepStrictEqual(profAt(K3.pieces[si]), profAt(K3.pieces[si + 1]), `${tag} seam ${si + 1}: profiles match`);
+      });
+    }
+  }
+  console.log('R ok: 1 mm default top-edge fillet; 0/1/2 mm watertight, bottom flat + footprint unchanged, frets/nut inside the round-over; seam pins/sockets clear of it on 3-piece boards');
 }
 
 console.log('\nALL GEOMETRY TESTS PASSED');
