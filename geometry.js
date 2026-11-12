@@ -824,7 +824,7 @@
       splitAfterFrets: null,
       autoSplit: false,
       bedMm: 0,
-      seamKeys: false,
+      seamKeys: true,
       fretSteps: null,
       skipMarkers: [17],
       edgeFilletMm: 1

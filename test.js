@@ -689,7 +689,10 @@ function boundaryEdgeCount(tris) {
   assert.strictEqual(Qleg.pieces.length, 2, 'Q: legacy splitAfterFret gives 2 pieces');
   approx(Qlist.pieces[0].lengthMm, Qleg.pieces[0].lengthMm, 0.001, 'Q: list [7] matches legacy piece 1 length');
   approx(Qlist.pieces[1].lengthMm, Qleg.pieces[1].lengthMm, 0.001, 'Q: list [7] matches legacy piece 2 length');
-  approx(yExtent(Qlist.pieces[0].triangles)[1], Qlist.meta.splitYMs[0], 0.001, 'Q: no keys by default — piece 1 ends exactly at the seam');
+  // pins are ON by default: piece 1 carries pins past the seam
+  assert.ok(yExtent(Qlist.pieces[0].triangles)[1] > Qlist.meta.splitYMs[0] + 1, 'Q: keys on by default — pins protrude past the seam');
+  const Qoff = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [7], seamKeys: false }), earcut);
+  approx(yExtent(Qoff.pieces[0].triangles)[1], Qoff.meta.splitYMs[0], 0.001, 'Q: keys off — piece 1 ends exactly at the seam');
   // three pieces, lengths add up, every piece sealed (flat + radiused)
   const Q3 = Fretboard.buildFretboard(Object.assign({}, base, { splitAfterFrets: [5, 12] }), earcut);
   assert.strictEqual(Q3.pieces.length, 3, 'Q: [5, 12] gives 3 pieces');
@@ -741,7 +744,7 @@ function boundaryEdgeCount(tris) {
     if (Math.abs(tr2[i] - pinX) < 0.01 && Math.abs(tr2[i + 1] - (seamY + 3.7)) < 0.01 && Math.abs(tr2[i + 2] - cz) < 0.01) capFound = true;
   }
   assert.ok(capFound, 'Q keys: socket end cap found 3.7mm into piece 2');
-  const vPlain = Qlist.pieces.map(pc => Math.abs(Fretboard.signedVolume(pc.triangles)));
+  const vPlain = Qoff.pieces.map(pc => Math.abs(Fretboard.signedVolume(pc.triangles)));
   const vKey = Qk.pieces.map(pc => Math.abs(Fretboard.signedVolume(pc.triangles)));
   approx(vKey[0] - vPlain[0], 78, 12, 'Q keys: pins add their volume to piece 1');
   approx(vPlain[1] - vKey[1], 69, 12, 'Q keys: sockets remove their cavity volume from piece 2');
