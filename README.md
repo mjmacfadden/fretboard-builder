@@ -73,14 +73,22 @@ case, and a worn board becomes a fresh fret job for a few cents of filament.
   flat so the board sits flush on the neck, and the end/seam faces stay
   flat. Frets and the nut are shortened by the same radius at each end,
   so they finish on the flat top instead of hanging over the curve.
-- **Headstock extension** (*Advanced*, off by default): a Strat-style
+- **Headstock extension** (*Advanced*, off by default): a classic electric-style
   tongue past the nut — ¼″ of flat at full thickness, then a 45° taper
   down the full thickness to the tip (about 0.45″ total reach).
 - **Fretboard radius** (*Advanced*, off/flat by default): the traditional
-  radii — 16″, 12″ (Gibson), 9.5″ and 7.25″ (vintage Fender). The crown
+  radii — 16″, 12″, 9.5″ (modern) and 7.25″ (vintage). The crown
   is at the centerline, the bottom stays flat, and the frets, nut slots
   and extension all follow the curve. Downloads get an `_r12`-style
   suffix so radiused parts can't be confused with flat ones.
+- **Presets** (top of the form): *T-Style* (25.5″ scale, 22 frets, 1.650″
+  nut, 2.2″ at the heel, .046″-tall frets) and *LP-Style* (24.75″ scale,
+  22 frets, 1.695″ nut, 2.26″ at the end of the board, .045″-tall frets)
+  fill in a standard 6-string electric layout from commonly published
+  specs, with the nut slots set for .010″ over fret 1 on the treble
+  string. *Custom* (the default) changes nothing. Editing any of those
+  fields afterwards switches the menu back to Custom. Presets keep the
+  board flat and leave split, screw, tail and edge options alone.
 - On a **3-string nut** the slots use fixed spacing — center slot on the
   centerline, the other two ½″ away on each side.
 
