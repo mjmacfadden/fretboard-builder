@@ -214,6 +214,7 @@
     var tris = null; // scene groups { body, recess, features }
     var groupNormals = {}; // per-group smoothed vertex normals
     var center = [0, 0, 0], radius = 1;
+    var MIN_ZOOM = 0.5, MAX_ZOOM = 64;
     var az = -0.6, el = 0.62, zoom = 1;
     var panX = 0, panY = 0; // screen-space pan offset, canvas pixels
 
@@ -356,6 +357,9 @@
               vsh.push(0.42 + 0.58 * Math.max(0, vnx * lx + vny * ly + vnz * lz));
             }
           }
+          // skip faces entirely off-canvas (matters when zoomed in close)
+          if (Math.max(px[0], px[1], px[2]) < -2 || Math.min(px[0], px[1], px[2]) > W + 2 ||
+              Math.max(py[0], py[1], py[2]) < -2 || Math.min(py[0], py[1], py[2]) > H + 2) continue;
           faces.push({ px: px, py: py, depth: depth / 3, shade: shade, vsh: vsh });
         }
         faces.sort(function (a, b) { return a.depth - b.depth; }); // far first
@@ -448,7 +452,13 @@
       var rect = canvas.getBoundingClientRect();
       var k = rect.width ? canvas.width / rect.width : 1;
       var mx = (e.clientX - rect.left) * k, my = (e.clientY - rect.top) * k;
-      var newZoom = clamp(zoom * (e.deltaY < 0 ? 1.1 : 0.9), 0.5, 8);
+      // Scale the step by the wheel delta so trackpads zoom smoothly and a
+      // mouse notch is ~15%. Max 64x shows ~8 mm across the view, close
+      // enough to inspect the edge round-over and fret ends. The view is
+      // orthographic, so there is no near plane to clip through.
+      var dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      var step = clamp(Math.pow(1.0015, -dy), 0.8, 1.25);
+      var newZoom = clamp(zoom * step, MIN_ZOOM, MAX_ZOOM);
       var r = newZoom / zoom;
       if (r !== 1) {
         panX = mx - canvas.width / 2 - (mx - canvas.width / 2 - panX) * r;
