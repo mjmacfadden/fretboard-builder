@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Body Builder — 3D-printable clamshell guitar bodies</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* page-specific bits; everything else comes from styles.css */
+  [hidden] { display: none !important; }
+  .page-links { margin: .6rem 0 0; }
+  .page-links a { color: #f3c98a; }
+  .controls h3 { font-size: 1rem; margin: 1rem 0 .5rem; border-top: 1px dashed var(--line); padding-top: .7rem; }
+  #downloads .pair { display: flex; gap: .5rem; }
+  #downloads .pair button { flex: 1; font-size: .95rem; }
+  #downloads button.secondary { background: #fff; color: var(--accent-dark); border: 1px solid var(--accent); }
+  #downloads button.secondary:hover { background: #fbf2e4; }
+  .view-row { display: flex; gap: .4rem; flex-wrap: wrap; margin: .6rem 0 0; }
+  .view-row button {
+    font: inherit; font-size: .85rem; padding: .25rem .6rem; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink);
+  }
+  .view-row button:hover { border-color: var(--accent); }
+  .status { color: #8a7a5f; font-size: .85rem; min-height: 1.2em; margin: .3rem 0 0; }
+  .readouts .k { flex-basis: 9rem; }
+  .notes { margin-top: 1rem; }
+  .notes summary { cursor: pointer; font-weight: bold; }
+  .notes li { margin: .25rem 0; line-height: 1.4; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎸 Body Builder</h1>
+  <p class="tagline">
+    A small acoustic-style body for 3- and 4-string guitars: a printed rim in two mirror-image halves
+    with tracks for <strong>⅛″ plywood</strong> top and back panels. Slide the panels into one half,
+    close the other half over them and bolt the halves together through the solid neck and tail blocks.
+    The neck bolts on with four screws through a back plate.
+  </p>
+  <p class="page-links"><a href="index.html">← Fretboard Builder</a></p>
+</header>
+
+<main>
+  <section class="panel controls">
+    <h2>Your body</h2>
+
+    <label>
+      Body style
+      <select id="style">
+        <option value="parlor" selected>Parlor — 12.5″ × 9.5″</option>
+        <option value="small-dread">Small dreadnought style — 12.75″ × 10″</option>
+        <option value="round">Round — 11.5″ circle</option>
+        <option value="cigar-box">Cigar-box style — 12″ × 7″</option>
+        <option value="custom">Custom — your own shape</option>
+      </select>
+    </label>
+
+    <label>
+      Body length <span class="hint">(must stay under the print bed)</span>
+      <span class="row"><input type="number" id="lengthIn" value="12.5" min="7" max="12.85" step="0.05"><span class="unit">in</span></span>
+    </label>
+
+    <div id="bouts-rows">
+      <label>
+        Lower bout width
+        <span class="row"><input type="number" id="lowerWidthIn" value="9.5" min="4" max="13" step="0.05"><span class="unit">in</span></span>
+      </label>
+      <label>
+        Waist width
+        <span class="row"><input type="number" id="waistWidthIn" value="5.75" min="3" max="13" step="0.05"><span class="unit">in</span></span>
+      </label>
+      <label>
+        Upper bout width
+        <span class="row"><input type="number" id="upperWidthIn" value="7" min="3.5" max="13" step="0.05"><span class="unit">in</span></span>
+      </label>
+    </div>
+
+    <div id="box-rows" hidden>
+      <label>
+        Width
+        <span class="row"><input type="number" id="widthIn" value="7" min="3.5" max="13" step="0.05"><span class="unit">in</span></span>
+      </label>
+      <label>
+        Corner radius
+        <span class="row"><input type="number" id="cornerRadiusIn" value="0.5" min="0.05" max="3" step="0.05"><span class="unit">in</span></span>
+      </label>
+    </div>
+
+    <label>
+      Body depth <span class="hint">(rim height, top to back)</span>
+      <span class="row"><input type="number" id="depthIn" value="3.25" min="2" max="4.5" step="0.05"><span class="unit">in</span></span>
+    </label>
+
+    <label>
+      Neck screws
+      <select id="neckScrewMode">
+        <option value="plate" selected>Back plate on the back face (long screws)</option>
+        <option value="wells">Counterbored wells for washers / ferrules (shorter screws)</option>
+      </select>
+    </label>
+
+    <label>
+      Clamshell bolts
+      <select id="boltSize">
+        <option value="M3">M3</option>
+        <option value="M4" selected>M4</option>
+        <option value="#6">#6</option>
+      </select>
+    </label>
+
+    <label>
+      Bolts through the neck block
+      <select id="neckBolts">
+        <option value="1" selected>1 — between the neck screws</option>
+        <option value="2">2 — add one behind the pocket</option>
+      </select>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" id="tailBolts" checked>
+      Bolt through the tail block <span class="hint">(recommended)</span>
+    </label>
+
+    <label>
+      Print bed size
+      <span class="row"><input type="number" id="bedIn" value="12.9" min="6" max="20" step="0.1"><span class="unit">in</span></span>
+    </label>
+
+    <details class="advanced">
+      <summary>Advanced</summary>
+
+      <h3>Shape</h3>
+      <div id="bout-pos-rows">
+        <label>Lower bout widest point <span class="hint">(fraction of length from the tail)</span>
+          <span class="row"><input type="number" id="lowerPos" value="0.30" min="0.1" max="0.6" step="0.01"></span></label>
+        <label>Waist position
+          <span class="row"><input type="number" id="waistPos" value="0.57" min="0.2" max="0.8" step="0.01"></span></label>
+        <label>Upper bout widest point
+          <span class="row"><input type="number" id="upperPos" value="0.80" min="0.4" max="0.9" step="0.01"></span></label>
+      </div>
+
+      <h3>Rim and panel tracks</h3>
+      <label>Wall thickness
+        <span class="row"><input type="number" id="wallMm" value="6" min="4" max="12" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Panel thickness <span class="hint">(⅛″ ply = 3.175 mm; measure yours)</span>
+        <span class="row"><input type="number" id="panelThicknessMm" value="3.175" min="1.5" max="6.5" step="0.025"><span class="unit">mm</span></span></label>
+      <label>Track clearance <span class="hint">(slot height minus panel thickness)</span>
+        <span class="row"><input type="number" id="panelFitMm" value="0.3" min="0" max="1" step="0.05"><span class="unit">mm</span></span></label>
+      <label>Track depth <span class="hint">(how far the track cuts into the wall)</span>
+        <span class="row"><input type="number" id="grooveDepthMm" value="2.5" min="1" max="5" step="0.1"><span class="unit">mm</span></span></label>
+      <label>Panel edge gap <span class="hint">(panels are cut this much short of the track bottom)</span>
+        <span class="row"><input type="number" id="panelEdgeGapMm" value="0.5" min="0" max="1.5" step="0.1"><span class="unit">mm</span></span></label>
+      <label>Top lip <span class="hint">(rim above the top panel)</span>
+        <span class="row"><input type="number" id="topLipMm" value="4" min="2" max="10" step="0.1"><span class="unit">mm</span></span></label>
+      <label>Bottom lip <span class="hint">(rim below the back panel)</span>
+        <span class="row"><input type="number" id="bottomLipMm" value="2.4" min="1.2" max="8" step="0.1"><span class="unit">mm</span></span></label>
+
+      <h3>Neck pocket and blocks</h3>
+      <label>Pocket length
+        <span class="row"><input type="number" id="pocketLengthIn" value="3" min="1.5" max="4" step="0.05"><span class="unit">in</span></span></label>
+      <label>Pocket width
+        <span class="row"><input type="number" id="pocketWidthIn" value="1.5" min="1" max="2.5" step="0.0625"><span class="unit">in</span></span></label>
+      <label>Pocket depth <span class="hint">(floor below the top surface of the top panel)</span>
+        <span class="row"><input type="number" id="pocketDepthIn" value="0.9" min="0.4" max="1.5" step="0.05"><span class="unit">in</span></span></label>
+      <label>Pocket fit <span class="hint">(added to each side of the width)</span>
+        <span class="row"><input type="number" id="pocketFitMm" value="0.15" min="0" max="1" step="0.05"><span class="unit">mm</span></span></label>
+      <label>Neck block side walls
+        <span class="row"><input type="number" id="neckBlockSideMm" value="19" min="8" max="40" step="1"><span class="unit">mm</span></span></label>
+      <label>Neck block past the pocket
+        <span class="row"><input type="number" id="neckBlockEndMm" value="19" min="8" max="40" step="1"><span class="unit">mm</span></span></label>
+      <label>End slab height <span class="hint">(full-width slabs at both ends that carry the bolts)</span>
+        <span class="row"><input type="number" id="baseBlockMm" value="18" min="10" max="30" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Tail block length
+        <span class="row"><input type="number" id="tailBlockLengthMm" value="30" min="15" max="60" step="1"><span class="unit">mm</span></span></label>
+      <label>Tail block width
+        <span class="row"><input type="number" id="tailBlockWidthMm" value="50" min="20" max="120" step="1"><span class="unit">mm</span></span></label>
+
+      <h3>Neck screws</h3>
+      <label>Hole spacing across the neck
+        <span class="row"><input type="number" id="neckScrewSpanXIn" value="0.875" min="0.4" max="2" step="0.0625"><span class="unit">in</span></span></label>
+      <label>Hole spacing along the neck
+        <span class="row"><input type="number" id="neckScrewSpanYIn" value="1.75" min="0.5" max="3" step="0.0625"><span class="unit">in</span></span></label>
+      <label>Screw clearance hole <span class="hint">(4.6 mm suits #8 wood screws)</span>
+        <span class="row"><input type="number" id="neckScrewHoleMm" value="4.6" min="3" max="7" step="0.1"><span class="unit">mm</span></span></label>
+      <label>Back plate thickness <span class="hint">(for the screw length)</span>
+        <span class="row"><input type="number" id="plateThicknessMm" value="3" min="1" max="8" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Screw bite into the neck
+        <span class="row"><input type="number" id="screwBiteMm" value="19" min="10" max="30" step="1"><span class="unit">mm</span></span></label>
+      <label>Well diameter <span class="hint">(wells mode)</span>
+        <span class="row"><input type="number" id="wellDiameterMm" value="16" min="8" max="25" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Floor between wells and pocket <span class="hint">(wells mode)</span>
+        <span class="row"><input type="number" id="wellFloorMm" value="25.4" min="12" max="40" step="0.5"><span class="unit">mm</span></span></label>
+    </details>
+
+    <div id="downloads">
+      <div class="pair">
+        <button type="button" id="dl-left">Left half STL</button>
+        <button type="button" id="dl-right">Right half STL</button>
+      </div>
+      <div class="pair">
+        <button type="button" id="dl-top-svg" class="secondary">Top panel SVG</button>
+        <button type="button" id="dl-back-svg" class="secondary">Back panel SVG</button>
+      </div>
+      <div class="pair">
+        <button type="button" id="dl-top-dxf" class="secondary">Top panel DXF</button>
+        <button type="button" id="dl-back-dxf" class="secondary">Back panel DXF</button>
+      </div>
+    </div>
+    <p class="filename" id="filename"></p>
+  </section>
+
+  <section class="panel output">
+    <div id="preview-wrap">
+      <div id="preview"></div>
+      <p id="preview-fallback" hidden>
+        The 3D preview isn't available in this browser. The downloads still work.
+      </p>
+    </div>
+    <div class="view-row">
+      <button type="button" data-view="rim">Rim only</button>
+      <button type="button" data-view="assembled">With panels</button>
+      <button type="button" data-view="exploded">Exploded</button>
+      <button type="button" data-cam="top">Top</button>
+      <button type="button" data-cam="back">Back face</button>
+      <button type="button" data-cam="pocket">Neck pocket</button>
+    </div>
+    <p class="status" id="status"></p>
+
+    <div class="readouts">
+      <div><span class="k">Overall size</span><span class="v" id="size-out">—</span></div>
+      <div><span class="k">Each half on the bed</span><span class="v" id="bed-out">—</span></div>
+      <div><span class="k">Panels (⅛″ ply)</span><span class="v" id="panels-out">—</span></div>
+      <div><span class="k">Neck pocket</span><span class="v" id="pocket-out">—</span></div>
+      <div><span class="k">Neck screws</span><span class="v" id="screws-out">—</span></div>
+      <div><span class="k">Clamshell bolts</span><span class="v" id="bolts-out">—</span></div>
+      <div><span class="k">Overhangs</span><span class="v" id="overhang-out">—</span></div>
+    </div>
+    <p class="warning" id="warnings" hidden></p>
+
+    <details class="notes" open>
+      <summary>Printing and assembly</summary>
+      <ul>
+        <li>Print each half <strong>back face down</strong> (the flat side that was on the bed is the back). No supports: every overhang is a 45° staircase.</li>
+        <li>Material: <strong>PETG</strong> (or ASA) — it creeps less than PLA under constant string and screw load. 0.2 mm layers.</li>
+        <li><strong>6 walls / perimeters</strong> (0.4 mm nozzle ≈ 2.4 mm of solid shell each side), 6 top and bottom layers, 30–40% gyroid infill for the rim.</li>
+        <li>Neck and tail blocks: use a slicer modifier (height-range or box modifier) for <strong>80–100% infill</strong> in the blocks — this is the material the neck screws and bolts clamp.</li>
+        <li>Plywood: cut the panels from the SVG/DXF (1:1, millimetres; check the 100 mm bar after printing a paper copy). The top panel has the neck-pocket notch.</li>
+        <li>Assembly: lay one half on its outside, slide the back and top panels into its tracks, close the other half over them, bolt the halves through the neck and tail blocks (washers both sides). Glue the panels into the tracks if you like — it isn't needed to hold them.</li>
+        <li>Neck: drill pilot holes in the neck through the body's holes, then screw on through the back plate. Snug, not cranked.</li>
+      </ul>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <p>
+    All sizes in millimetres in the files. The halves are mirror images; both STLs are needed.
+    See <strong>README.md</strong> in the repo for the design notes.
+  </p>
+</footer>
+
+<script src="vendor/earcut.min.js"></script>
+<script src="vendor/clipper.js"></script>
+<script src="body-geometry.js"></script>
+<script src="stl.js"></script>
+<script src="preview.js"></script>
+<script src="body-app.js"></script>
+</body>
+</html>

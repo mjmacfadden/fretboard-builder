@@ -94,7 +94,8 @@ case, and a worn board becomes a fresh fret job for a few cents of filament.
 
 ## Run it
 
-Just open `index.html` in a browser — no build step, no server, no internet.
+Just open `index.html` (fretboards) or `body-builder.html` (bodies) in a
+browser — no build step, no server, no internet.
 Everything (including the 3D preview) runs locally in plain JavaScript.
 
 ## Printing notes
@@ -122,7 +123,59 @@ Everything (including the 3D preview) runs locally in plain JavaScript.
 | `geometry.js` | All the fretboard math and mesh generation (pure JS — runs in Node too) |
 | `stl.js` | Binary STL writer |
 | `vendor/earcut.min.js` | Earcut triangulation (ISC license, © Mapbox) |
-| `test.js` | Headless geometry tests: `node test.js` |
+| `test.js` | Headless geometry tests: `node test.js` (also runs `body-test.js`) |
+| `body-builder.html` / `body-app.js` | The body builder page and its controls |
+| `body-geometry.js` | Body outline, rim halves, tracks, pocket, bolts, panel outlines (pure JS — runs in Node too) |
+| `body-test.js` | Body builder tests: `node body-test.js` |
+| `preview.js` | The canvas 3D preview, packaged for the body page |
+| `vendor/clipper.js` | Clipper polygon booleans / offsets (Boost license, © Angus Johnson) |
+
+## Body Builder (`body-builder.html`)
+
+A second page for a **clamshell guitar body** for small 3- and 4-string
+guitars. Open `body-builder.html` (or use the link at the top of the
+fretboard page) — same panels, preview and offline behaviour.
+
+- **Rim in two mirror-image halves**, split down the centre line (x = 0).
+  The split runs right through the neck block and the tail block, so each
+  half is a "C" that is open on the inside: the ⅛″ (3.175 mm) plywood top
+  and back slide sideways into **tracks** cut into the inside of the wall
+  near the top and bottom edges, then the second half closes over them.
+  A top/bottom split wouldn't work (each half would be a closed loop the
+  panels can't get into), and a front/back split puts the joints at the
+  waist where you can't reach the bolts.
+- **Tracks**: panel thickness + 0.3 mm tall, 2.5 mm deep into a 6 mm wall;
+  the panels are cut 0.5 mm short of the bottom of the track, so 2 mm of
+  each panel edge is captured. The roof of every track is a 45° staircase
+  (0.4 mm steps), so nothing needs support.
+- **Neck pocket**: 3″ long × 1.5″ wide (+0.15 mm each side), floor 0.9″
+  below the top surface of the top panel. The pocket sits in a **solid neck
+  block** (19 mm walls each side and past the end of the pocket) that runs
+  from the pocket floor all the way down to the back face. The four neck
+  screws (0.875″ × 1.75″ pattern) go straight down through that block, and
+  the back plate sits on the flat back face — the face that was printed on
+  the bed. So the screw clamp only squeezes a solid column of plastic
+  (~2,900 mm² under the neck heel); nothing spans or bends.
+  *Wells* mode adds counterbores from the back for washers or ferrules,
+  leaving 1″ of floor, so standard 1¾″ screws reach.
+- **Clamshell bolts** (M3, M4 or #6) run sideways through full-width end
+  slabs at the bottom of the neck and tail blocks: one at the neck between
+  the two rows of neck screws (optionally a second behind the pocket) and
+  one at the tail. Holes are teardrop-shaped (print without support) with
+  a flat washer seat at each outside wall; they're long, so use threaded
+  rod with nuts and washers or long bolts (the page shows the lengths).
+  With both ends pinned, each C-half can't bulge at the waist without
+  stretching the panels, so no bolt is needed in between. Glue in the
+  tracks is optional.
+- **Body styles**: Parlor, Small dreadnought style, Round and Cigar-box
+  style presets; editing any shape field switches to Custom. Everything is
+  checked against the print bed (12.9″ by default) and warned in the page.
+- **Downloads**: an STL for each half, and the top and back panel outlines
+  as 1:1 SVG (mm, with a 100 mm check bar) or DXF.
+
+Print each half back face down in PETG (or ASA), 6 perimeters, 6 top and
+bottom layers, 30–40% gyroid, and use a slicer modifier for 80–100% infill
+in the neck and tail blocks.
 
 ## Possible next steps
 
