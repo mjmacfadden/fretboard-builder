@@ -137,78 +137,93 @@ guitars. Open `body-builder.html` (or use the link at the top of the
 fretboard page) — same panels, preview and offline behaviour.
 
 - **Rim in two halves** (mirror images, except on the single-cutaway
-  T-Style), split down the centre line (x = 0).
-  The split runs right through the neck block and the tail block, so each
-  half is a "C" that is open on the inside: the ⅛″ (3.175 mm) plywood top
-  and back slide sideways into **tracks** cut into the inside of the wall
-  near the top and bottom edges, then the second half closes over them.
-  A top/bottom split wouldn't work (each half would be a closed loop the
-  panels can't get into), and a front/back split puts the joints at the
-  waist where you can't reach the bolts.
+  T-Style), split down the centre line (x = 0), plus a separate **neck
+  block** and **tail block**. Each half is a "C" that is open on the
+  inside: the ⅛″ (3.175 mm) plywood top and back sit in **channels** cut
+  into the inside of the wall near the top and bottom edges, and the
+  halves close in sideways over the panel edges. A top/bottom split
+  wouldn't work (each half would be a closed loop the panels can't get
+  into), and a front/back split puts the joints at the waist where you
+  can't reach the bolts.
 - **Panel channels**: each panel edge sits in a channel with a **flat
   2 mm lip on each face** of the panel (no chamfers), reaching **4 mm** in
   over it; the panel is cut 0.5 mm short of the channel back, so 3.5 mm of
   every edge is held. The outside of the rim stays a plain 3 mm wall
   (2 mm minimum). Lip thickness (default 2 mm) and lip overlap (default
-  4 mm) are set on the page. The back panel's channel runs round its whole
-  edge: along both side walls and straight across the faces of the tail
-  and neck end slabs, where the lips continue on the block faces, so it is
-  held on all four sides with no gap. It can't follow the outer wall round
-  the tail and neck ends instead: the halves close sideways, so any ply
-  beside a block at the same position along the body would have to pass
-  through that block. Inside the neck and tail blocks the block tops carry
-  the top panel instead of a lip. The second half still closes sideways
-  over the panels (and the neck collar).
+  4 mm) are set on the page. **The back mirrors the top**: both channels
+  run round the whole outer wall, and both panels are one full-outline
+  piece (the top panel with the neck-pocket notch). The blocks stand on
+  the back panel, their undersides flush with the back channel's upper
+  face, just as the top panel lies on their tops. Where a block stands,
+  the block itself takes the place of the channel's inner lip.
   **Bridge sag:** printed back face down, the underside of three lips (both
   lips of the top channel and the upper lip of the back channel) is a flat
   4 mm ledge off the wall with nothing under it. Every channel is
   0.3 mm taller than panel + 0.4 mm fit (3.875 mm for ⅛″ ply), so a little
   droop on those ledges doesn't pinch the panel. Turn on bridge / overhang
   cooling. Lip overlaps past about 5 mm get a droop warning.
+- **Neck and tail blocks as separate parts**: if the blocks stayed in the
+  halves they would need large flat undersides above the back panel,
+  which can't print without supports. As their own parts each block prints
+  standing on its flat underside (the face that sits on the back panel);
+  above a full-width bottom slab (the *block slab*, 18 mm by default,
+  which carries the sideways bolts) the narrower upper part steps in with
+  45° staircases. Each block keeps 0.25 mm clear of the walls, so the
+  halves still close in sideways round them, the same way they close over
+  the top panel: at the block levels each half is only wall. Behind each
+  bolt's washer seat the half has a **boss** (the curved tail wall would
+  otherwise be cut through by the flat seat); it grows from the back
+  channel's lip in a 45° corbel, and slides into a matching notch in the
+  block as the half closes, bearing flat on it.
 - **Neck pocket**: 3″ long × 1.5″ wide (+0.15 mm each side), floor 0.9″
-  below the top surface of the top panel. The pocket sits in a **solid neck
-  block** (19 mm walls each side and past the end of the pocket) that runs
-  from the pocket floor all the way down to the back face. The four neck
-  screws (0.875″ × 1.75″ pattern) go straight down through that block, and
-  the back plate sits on the flat back face — the face that was printed on
-  the bed. So the screw clamp only squeezes a solid column of plastic
-  (~2,900 mm² under the neck heel); nothing spans or bends.
-  *Wells* mode adds counterbores from the back for washers or ferrules,
-  leaving 1″ of floor, so standard 1¾″ screws reach.
+  below the top surface of the top panel, in the **solid neck block**
+  (19 mm walls each side and past the end of the pocket), which runs from
+  the pocket floor down to the back panel: 51 mm of solid block under the
+  floor on the parlor. The four neck screws (0.875″ × 1.75″ pattern) go
+  through the back plate, the back panel and the neck block, so the screw
+  clamp only squeezes the plate, the ply and a solid column of plastic.
+  Screw length = plate + ply + block + bite: 3 + 3.175 + 51.1 mm, so 3″
+  #8 screws on the parlor (18.9 mm into the neck). The back panel has a
+  hole for each screw. *Wells* mode adds counterbores from the block's
+  underside for washers or ferrules, leaving 1″ of floor, so standard
+  1¾″ screws reach; the back panel then has a well-sized hole under each.
 - **Split neck block (on by default)**: the neck block is split
-  horizontally at the pocket floor. Everything below the floor stays in
-  the two halves (so the neck heel and the neck screws still bear on solid
-  lower block, as above). Everything above it — the pocket's side and end
-  walls — prints as a separate U-shaped **neck collar** that bridges the
-  centre split. Four vertical bolts (two into each half; M4 × 25 mm on the
-  presets) come up from the back face, heads sunk in counterbored wells,
-  through snug holes in the lower block and into hex-nut traps that open
-  at the collar's top (or heat-set inserts in its underside). The bolts
-  pull the collar down onto the lower block, so every printed layer in the
-  joint is in compression. Because the collar is bolted to both halves it
-  replaces the long sideways neck bolt (still available, 1 max with the
-  collar). The collar prints flat on its underside, no supports, and sits
-  0.25 mm inside the rim wall so the second half can close over it.
-- **Clamshell bolts** (M3, M4 or #6) run sideways through full-width end
-  slabs at the bottom of the tail block (and, optionally, the neck block:
-  one between the two rows of neck screws, or a second behind the pocket
-  when the neck collar is off). By default the tail gets two: the low one in
-  the end slab and an upper one just under the top-panel channel, so the
-  top of the tail seam can't spread. The tail block runs up to the top
-  channel, and the last 23 mm of the tail is solid block from wall to
-  wall up to that channel, so the upper bolt clamps solid
-  material from washer seat to washer seat, not an empty cavity. At the
-  neck end the top of the seam is held by the collar, which is bolted
-  down into both halves and spans the joint up to the top channel. Holes are teardrop-shaped (print without support) with
-  a flat washer seat at each outside wall; they're long, so use threaded
-  rod with nuts and washers or long bolts (the page shows the lengths).
-  With both ends pinned, each C-half can't bulge at the waist without
+  horizontally at the pocket floor. Below the floor is the neck block (so
+  the neck heel and the neck screws bear on solid block, as above).
+  Everything above it — the pocket's side and end walls — prints as a
+  separate U-shaped **neck collar**. Four vertical bolts (M4 × 25 mm on
+  the presets) come up from the neck block's underside, heads sunk in
+  counterbored wells, into hex-nut traps that open at the collar's top
+  (or heat-set inserts in its underside). The back panel has a hole under
+  each well so the heads can be reached. The bolts pull the collar down
+  onto the block, so every printed layer in the joint is in compression.
+  The collar prints flat on its underside, no supports, and sits 0.25 mm
+  inside the rim wall so the halves can close round it.
+- **Clamshell bolts** (M3, M4 or #6) run sideways through both walls and
+  the blocks' bottom slabs, above the back channel and its lip: one
+  through the neck block (default; it is what ties the halves together at
+  the neck now that the block is its own part, so the page warns without
+  it; a second behind the pocket is optional) and, by default, two at the
+  tail: the low one in the slab and an upper one just under the top
+  channel, so the top of the tail seam can't spread. On the parlor the
+  bolt centres are 14.9 mm (neck), 16.1 mm (low tail) and 67.6 mm (upper
+  tail) above the back face; the low tail bolt sits a little higher than
+  the neck one because the curved tail wall needs a deeper boss. The last
+  23 mm of the tail block is solid from wall to wall up to the top
+  channel, so the upper bolt clamps solid material from washer seat to
+  washer seat. Holes are teardrop-shaped (print without support) with a
+  flat washer seat at each outside wall; they're long, so use threaded rod
+  with nuts and washers or long bolts (the page shows the lengths). With
+  both ends pinned, each C-half can't bulge at the waist without
   stretching the panels, so no bolt is needed in between. Glue in the
-  tracks is optional.
+  channels is optional.
+- **Minimum depth**: the block slab sits above the back channel now, so
+  the shallowest body is 46.6 mm (1.84″) with ⅛″ ply and M4 bolts
+  (was 40.6 mm). Shallower requests are raised to it, with a warning.
 - **Body styles**: Parlor, Small dreadnought style, Round, Cigar-box
   style and T-Style presets. The T-Style outline is traced from a drawing
   (`t-style-body-outline.svg`, built into `body-geometry.js`) and scaled
-  uniformly to 12.9″ × 10.52″, 1.85″ deep (the channels need 1.80″
+  uniformly to 12.9″ × 10.52″, 1.85″ deep (the body needs 1.84″
   minimum); the drawing's pocket marker sets the pocket (it measures
   3.01″ × 1.505″ at this scale). The drawing's neck end is the 1.5″
   tongue the neck sits on, so the rim closes it with a straight edge
@@ -228,8 +243,8 @@ fretboard page) — same panels, preview and offline behaviour.
   rim would collide gets a cap); the other presets don't need one.
 - Editing any shape field switches to Custom. Everything is
   checked against the print bed (12.9″ by default) and warned in the page.
-- **Downloads**: an STL for each half, the neck collar STL, the cutaway cap STL (T-Style), and the top and back panel outlines
-  as 1:1 SVG (mm, with a 100 mm check bar) or DXF.
+- **Downloads**: an STL for each half, the neck and tail block STLs, the neck collar STL, the cutaway cap STL (T-Style), and the top and back panel outlines
+  as 1:1 SVG (mm, with a 100 mm check bar) or DXF; the back panel's screw and collar-bolt holes are in both.
 
 Print each half back face down in PETG (or ASA), with bridge/overhang cooling on for the flat 4 mm lip undersides, 7 perimeters (the 3 mm wall prints fully solid), 6 top and
 bottom layers, 30–40% gyroid, and use a slicer modifier for 80–100% infill

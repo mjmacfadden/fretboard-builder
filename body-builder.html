@@ -117,8 +117,8 @@
     <label>
       Bolts through the neck block
       <select id="neckBolts">
-        <option value="0" selected>None — the neck collar ties the halves</option>
-        <option value="1">1 — between the neck screws</option>
+        <option value="0">None (not advised: nothing ties the halves at the neck)</option>
+        <option value="1" selected>1 — through the neck block (ties the halves)</option>
         <option value="2">2 — add one behind the pocket</option>
       </select>
     </label>
@@ -140,7 +140,7 @@
       Tail bolts (sideways, M4)
       <select id="tailBolts">
         <option value="2" selected>2: low + upper, clamps the whole tail seam (recommended)</option>
-        <option value="1">1: low bolt in the end slab only</option>
+        <option value="1">1: low bolt in the tail block slab only</option>
         <option value="0">None</option>
       </select>
     </label>
@@ -192,7 +192,7 @@
         <span class="row"><input type="number" id="neckBlockSideMm" value="19" min="8" max="40" step="1"><span class="unit">mm</span></span></label>
       <label>Neck block past the pocket
         <span class="row"><input type="number" id="neckBlockEndMm" value="19" min="8" max="40" step="1"><span class="unit">mm</span></span></label>
-      <label>End slab height <span class="hint">(full-width slabs at both ends that carry the bolts)</span>
+      <label>Block slab height <span class="hint">(full-width bottom of the neck and tail blocks, above the back panel; carries the bolts)</span>
         <span class="row"><input type="number" id="baseBlockMm" value="18" min="10" max="30" step="0.5"><span class="unit">mm</span></span></label>
       <label>Collar clearance <span class="hint">(gap to the rim's inside wall)</span>
         <span class="row"><input type="number" id="collarClearanceMm" value="0.25" min="0" max="1" step="0.05"><span class="unit">mm</span></span></label>
@@ -224,6 +224,10 @@
       <div class="pair">
         <button type="button" id="dl-left">Left half STL</button>
         <button type="button" id="dl-right">Right half STL</button>
+      </div>
+      <div class="pair">
+        <button type="button" id="dl-neck-block">Neck block STL</button>
+        <button type="button" id="dl-tail-block">Tail block STL</button>
       </div>
       <div class="pair" id="cap-dl-row" hidden>
         <button type="button" id="dl-cap">Cutaway cap STL</button>
@@ -266,7 +270,9 @@
       <div><span class="k">Panels (⅛″ ply)</span><span class="v" id="panels-out">—</span></div>
       <div><span class="k">Panel channels</span><span class="v" id="channel-out">—</span></div>
       <div><span class="k">Neck pocket</span><span class="v" id="pocket-out">—</span></div>
+      <div><span class="k">Neck / tail blocks</span><span class="v" id="blocks-out">—</span></div>
       <div><span class="k">Neck screws</span><span class="v" id="screws-out">—</span></div>
+      <div><span class="k">Back panel holes</span><span class="v" id="backholes-out">—</span></div>
       <div><span class="k">Clamshell bolts</span><span class="v" id="bolts-out">—</span></div>
       <div><span class="k">Neck collar</span><span class="v" id="collar-out">—</span></div>
       <div id="cap-row" hidden><span class="k">Cutaway cap</span><span class="v" id="cap-out">—</span></div>
@@ -278,13 +284,14 @@
       <summary>Printing and assembly</summary>
       <ul>
         <li>Print each half <strong>back face down</strong> (the flat side that was on the bed is the back). No supports: every overhang is a 45° staircase except the underside of three channel lips (both lips of the top channel and the upper lip of the back channel). Those are flat ledges as wide as the lip overlap (4 mm by default) off the wall with nothing under them, so turn on your slicer's bridge / overhang cooling. Each channel is the sag allowance (0.3 mm by default) taller than panel + fit, so a little droop won't pinch the panel.</li>
-        <li>Neck collar (split neck block): print it <strong>flat underside down</strong> — the STL is already the right way up. It carries the pocket's side and end walls; the pocket floor stays part of the halves, so the neck screws clamp only solid lower block.</li>
+        <li>Neck block and tail block: separate parts. Print each <strong>standing on its flat underside</strong> (the STL is already the right way up); that face sits on the back panel. The upper parts step in with 45° staircases, so no supports.</li>
+        <li>Neck collar (split neck block): print it <strong>flat underside down</strong> — the STL is already the right way up. It carries the pocket's side and end walls; the pocket floor is the top of the neck block, so the neck screws clamp only solid block.</li>
         <li>Material: <strong>PETG</strong> (or ASA) — it creeps less than PLA under constant string and screw load. 0.2 mm layers.</li>
         <li><strong>7 walls / perimeters</strong> (0.4 mm nozzle, ~0.45 mm lines): the 3 mm rim wall and the channel lips print fully solid. 6 top and bottom layers; 30–40% gyroid only where the flanges are wider than that.</li>
         <li>Neck and tail blocks: use a slicer modifier (height-range or box modifier) for <strong>80–100% infill</strong> in the blocks — this is the material the neck screws and bolts clamp.</li>
-        <li>Plywood: cut the panels from the SVG/DXF (1:1, millimetres; check the 100 mm bar after printing a paper copy). The top panel has the neck-pocket notch.</li>
-        <li>Assembly: lay one half on its outside. Drop the collar nuts into their traps, slide the collar into that half's neck end, and put that half's collar bolts in from the back face. Slide the back and top panels into its tracks, close the other half over them, add its collar bolts, then the two tail bolts (washers both sides). Glue the panels into the tracks if you like — it isn't needed to hold them.</li>
-        <li>Neck: drill pilot holes in the neck through the body's holes, then screw on through the back plate. Snug, not cranked.</li>
+        <li>Plywood: cut the panels from the SVG/DXF (1:1, millimetres; check the 100 mm bar after printing a paper copy). The top panel has the neck-pocket notch. The back panel is the full outline, with holes for the neck screws and for the heads of the collar bolts; drill them where the SVG/DXF marks them.</li>
+        <li>Assembly: bolt the collar onto the neck block (collar bolts up from the block's underside into the nuts or inserts). Lay the back panel flat and stand the neck block and tail block on it, on their outlines. Lay the top panel on the block tops. Slide one half in sideways so both panel edges enter its channels and its bolt bosses enter the block notches, then the other half from the other side. Put in the neck bolt and the tail bolts (washers both sides). The blocks sit a little loose on the back panel (the channel's fit and sag room) until everything is clamped. Glue the panels into the channels if you like — it isn't needed to hold them.</li>
+        <li>Neck: drill pilot holes in the neck through the body's holes, then screw on through the back plate and the back panel. Snug, not cranked.</li>
       </ul>
     </details>
   </section>

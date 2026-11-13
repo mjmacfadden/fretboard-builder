@@ -151,7 +151,7 @@ function build(name, p) {
     round: B.styleParams('round'),
     'cigar-box': B.styleParams('cigar-box'),
     wells: Object.assign(B.styleParams('parlor'), { neckScrewMode: 'wells' }),
-    bolts2: Object.assign(B.styleParams('small-dread'), { neckBolts: 2, boltSize: '#6' }),
+    bolts2: Object.assign(B.styleParams('small-dread'), { neckBolts: 2, neckCollar: false, boltSize: '#6' }),
     m3shallow: Object.assign(B.styleParams('round'), { boltSize: 'M3', depthIn: 2.5 }),
     't-style': B.styleParams('t-style'),
     'tstyle-lefty-insert': Object.assign(B.styleParams('t-style'), { leftHanded: true, collarFastener: 'insert', neckBolts: 1 }),
@@ -175,6 +175,18 @@ function build(name, p) {
       assert.ok(Math.abs(vl - vr) / vr > 0.02, `C ${name}: halves really differ`);
       assert.ok(r.meta.leftFootprintMm[0] < r.meta.bedMm && r.meta.rightFootprintMm[0] < r.meta.bedMm, `C ${name}: both halves fit the bed`);
     }
+    // the separate neck and tail blocks: closed, standing on the back
+    // panel's upper face (the back channel's top), up to the top panel
+    // (the neck block to the pocket floor when the collar is on)
+    [['neckBlock', r.meta.neckBlock], ['tailBlock', r.meta.tailBlock]].forEach(([g, info]) => {
+      const T = r.groups[g], bb = bounds(T);
+      assert.strictEqual(edgeErrors(T), 0, `C ${name}: ${g} not watertight`);
+      assert.ok(signedVolume(T) > 0, `C ${name}: ${g} outward normals`);
+      approx(bb[2], r.meta.bottomSlot[1], 1e-3, `C ${name}: ${g} underside flush with the back channel's upper face`);
+      approx(bb[5], g === 'neckBlock' && r.groups.collar ? r.meta.pocketFloorZ : r.meta.topSlot[0], 1e-3, `C ${name}: ${g} top`);
+      assert.ok(bb[3] - bb[0] < r.meta.bedMm && bb[4] - bb[1] < r.meta.bedMm, `C ${name}: ${g} fits the bed`);
+      approx(info.bottomZ, r.meta.bottomSlot[1], 1e-9, `C ${name}: ${g} meta bottom`);
+    });
     if (r.groups.collar) {
       const C = r.groups.collar, bc = bounds(C);
       assert.strictEqual(edgeErrors(C), 0, `C ${name}: neck collar not watertight`);
@@ -211,7 +223,7 @@ function build(name, p) {
     if (r.meta.fitsBed) assert.ok(bl[4] - bl[1] < r.meta.bedMm, `C ${name}: fits the bed`);
     else assert.ok(r.meta.diagonalSquareMm < r.meta.bedMm - 2 && r.warnings.some(w => /print bed/.test(w)), `C ${name}: fits only corner to corner, and says so`);
   });
-  console.log('Body C ok:', Object.keys(cases).length, 'configurations, halves and neck collar closed and consistently wound, mirrored (or per-side for T-Style), flat on the bed');
+  console.log('Body C ok:', Object.keys(cases).length, 'configurations, halves, neck / tail blocks and neck collar closed and consistently wound, mirrored (or per-side for T-Style), flat on the bed; blocks stand on the back channel\'s upper face');
 }
 
 // === Body D: panel channels ==============================================
@@ -336,6 +348,21 @@ function build(name, p) {
     c2.Execute(ClipperLib.ClipType.ctIntersection, o2, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
     assert.ok(o2.reduce((a, q) => a + Math.abs(ClipperLib.Clipper.Area(q)), 0) / 1e6 > 200, `E ${name}: cap's lip lies over the top panel`);
   });
+  // the neck and tail blocks stand on the back panel; the halves close
+  // over them exactly like over the panels (every slab of each block)
+  const partOutline = (r, part, k) => r.slabs[part][k].map(pp => pp.map(q => [q.X / 1000, q.Y / 1000]));
+  ['parlor', 'small-dread', 'round', 'cigar-box', 't-style'].forEach(name => {
+    const r = build(name, B.styleParams(name));
+    ['neckBlock', 'tailBlock'].forEach(part => {
+      const lv = r.slabs[part + 'Levels'];
+      for (let k = 0; k + 1 < lv.length; k++) {
+        const z = (lv[k] + lv[k + 1]) / 2000;
+        ['left', 'right'].forEach(half => {
+          assert.ok(sweptArea(r, half, partOutline(r, part, k), z) < 0.01, `E ${name}: ${part} collides with the ${half} half while closing (z=${z.toFixed(2)})`);
+        });
+      }
+    });
+  });
   // the neck collar: set into one half sideways, then the other half
   // closes over it, exactly like the panels (checked at mid height)
   ['parlor', 't-style'].forEach(name => {
@@ -355,7 +382,7 @@ function build(name, p) {
   const notchPt = { X: 0, Y: Math.round((m.lengthMm - 10) * 1000) };
   const inPanel = m.panels.top.outline.some(pp => ClipperLib.Clipper.PointInPolygon(notchPt, pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }))) !== 0);
   assert.ok(!inPanel, 'E: top panel is notched for the neck pocket');
-  console.log('Body E ok: both panels and the neck collar clear each half as it closes in sideways (T-Style: cutaway cap goes on last, from above), reach into the channels, top panel notched');
+  console.log('Body E ok: both panels, the neck and tail blocks and the neck collar clear each half as it closes in sideways (T-Style: cutaway cap goes on last, from above), reach into the channels, top panel notched');
 }
 
 // === Body F: neck pocket, block and screw holes ==========================
@@ -368,69 +395,119 @@ function build(name, p) {
   approx(m.pocket.widthMm, 1.5 * IN + 2 * p.pocketFitMm, 1e-9, 'F: pocket 1.5in wide + fit');
   approx(m.panelTopZ - m.pocketFloorZ, 0.9 * IN, 1e-9, 'F: floor 0.9in below the top of the top panel');
   const zF = m.pocketFloorZ, yc = L - m.pocket.lengthMm / 2;
-  // inside the pocket: open above the floor, solid just below it
-  assert.ok(!B.solidAt(r, 'left', -5, yc + 5, zF + 0.5), 'F: pocket open above the floor');
-  assert.ok(B.solidAt(r, 'left', -5, yc + 5, zF - 0.5), 'F: pocket floor solid');
+  // inside the pocket: open above the floor, solid neck block just below it
+  assert.ok(!B.solidAt(r, 'left', -5, yc + 5, zF + 0.5) && !B.solidAt(r, 'neckBlock', -5, yc + 5, zF + 0.5) && !B.solidAt(r, 'collar', -5, yc + 5, zF + 0.5), 'F: pocket open above the floor');
+  assert.ok(B.solidAt(r, 'neckBlock', -5, yc + 5, zF - 0.5), 'F: pocket floor solid');
   // pocket side walls (in the neck collar by default): solid wall just
   // outside the pocket width, a full block thick, and the end wall
   const wy = yc + 8; // clear of the collar bolts
   assert.ok(B.solidAt(r, 'collar', -(m.pocket.widthMm / 2 + 1), wy, zF + 5), 'F: pocket side wall');
   assert.ok(B.solidAt(r, 'collar', -(m.pocket.widthMm / 2 + p.neckBlockSideMm - 1), wy, zF + 5), 'F: side wall is a full block thick');
   assert.ok(B.solidAt(r, 'collar', -2, L - m.pocket.lengthMm - 1, zF + 5), 'F: pocket end wall');
-  // without the collar the same walls are part of the halves
+  // without the collar the same walls are part of the (one-piece) neck block
   const nc = build('no-collar', Object.assign(B.styleParams('parlor'), { neckCollar: false, neckBolts: 1 }));
-  assert.ok(B.solidAt(nc, 'left', -(m.pocket.widthMm / 2 + 1), wy, zF + 5), 'F: no collar: side wall in the half');
-  assert.ok(B.solidAt(nc, 'left', -5, L - m.pocket.lengthMm - 1, zF + 5), 'F: no collar: end wall in the half');
-  // the clamping column: solid all the way from the pocket floor down to
-  // the back face (z = 0) beside each screw, except the bolt hole
-  const boltY = yc;
-  for (let z = 0.2; z < zF; z += 0.5) {
+  assert.ok(B.solidAt(nc, 'neckBlock', -(m.pocket.widthMm / 2 + 1), wy, zF + 5), 'F: no collar: side wall in the neck block');
+  assert.ok(B.solidAt(nc, 'neckBlock', -5, L - m.pocket.lengthMm - 1, zF + 5), 'F: no collar: end wall in the neck block');
+  assert.ok(!B.solidAt(nc, 'neckBlock', -5, yc, zF + 5), 'F: no collar: pocket open');
+  // the clamping column: the neck block is solid all the way from the
+  // pocket floor down to its underside on the back panel beside each
+  // screw, except the bolt hole; under it, the back panel (no printed
+  // floor of the halves there)
+  const zB = m.neckBlock.bottomZ, nb = m.bolts.find(b => b.name === 'neck');
+  approx(zB, m.bottomSlot[1], 1e-9, 'F: neck block stands on the back channel\'s upper face');
+  for (let z = zB + 0.2; z < zF; z += 0.5) {
     m.neckScrews.forEach(s => {
-      if (s.x > 0) return;
-      assert.ok(!B.solidAt(r, 'left', s.x, s.y, z), `F: screw hole open at z=${z.toFixed(1)}`);
-      assert.ok(B.solidAt(r, 'left', s.x - p.neckScrewHoleMm / 2 - 1, s.y, z), `F: solid beside the screw at z=${z.toFixed(1)}`);
+      assert.ok(!B.solidAt(r, 'neckBlock', s.x, s.y, z), `F: screw hole open at z=${z.toFixed(1)}`);
+      assert.ok(B.solidAt(r, 'neckBlock', s.x - Math.sign(s.x) * (p.neckScrewHoleMm / 2 + 1), s.y, z), `F: solid beside the screw at z=${z.toFixed(1)}`);
     });
-    assert.ok(B.solidAt(r, 'left', -5, boltY, z), `F: solid under the pocket at z=${z.toFixed(1)}`);
+    if (Math.abs(z - nb.zMm) > B.BOLTS[p.boltSize].holeMm) assert.ok(B.solidAt(r, 'neckBlock', -5, nb.yMm, z), `F: solid under the pocket at z=${z.toFixed(1)}`);
   }
-  approx(m.plasticUnderPocketMm, zF, 1e-9, 'F: plate mode clamps the whole block');
+  for (let z = 0.2; z < zB; z += 0.5) assert.ok(!B.solidAt(r, 'left', -20, yc, z), `F: open under the neck block (back panel there) at z=${z.toFixed(1)}`);
+  // the solid block under the pocket floor, and the screw-length math:
+  // plate + 1/8in back panel + the block, plus the bite into the neck
+  approx(m.plasticUnderPocketMm, zF - zB, 1e-9, 'F: plate mode clamps the whole block');
   assert.ok(m.plasticUnderPocketMm > 40, 'F: >40 mm of block under the pocket');
-  // the back plate lands on the flat back face (printed on the bed)
-  assert.ok(B.solidAt(r, 'left', -20, yc, 0.1), 'F: back face solid where the plate lands');
+  const st = m.neckScrewStack;
+  approx(st.plateMm, p.plateThicknessMm, 1e-9, 'F: plate in the stack');
+  approx(st.backPanelMm, p.panelThicknessMm, 1e-9, 'F: back panel in the stack');
+  approx(st.blockMm, zF - zB, 1e-9, 'F: block in the stack');
+  const under = st.plateMm + st.backPanelMm + st.blockMm;
+  approx(m.neckScrewNeedMm, under + p.screwBiteMm, 1e-9, 'F: screw need = plate + ply + block + bite');
+  approx(m.neckScrewBiteMm, m.neckScrewLengthIn * IN - under, 1e-9, 'F: bite = screw - plate - ply - block');
+  assert.ok(m.neckScrewBiteMm >= 13 && m.neckScrewBiteMm <= p.screwBiteMm + 3, `F: screw bites ${m.neckScrewBiteMm.toFixed(1)} mm into the neck`);
+  // the screws pass through the back panel: holes in its outline
+  const holes = m.panels.back.holes.filter(h => /neck screw/.test(h.what));
+  assert.strictEqual(holes.length, 4, 'F: 4 neck screw holes in the back panel');
+  holes.forEach(h => approx(h.dMm, p.neckScrewHoleMm, 1e-9, 'F: clearance hole size'));
+  const inBack = (x, y) => m.panels.back.outline.reduce((w, pp) => w + (ClipperLib.Clipper.PointInPolygon({ X: Math.round(x * 1000), Y: Math.round(y * 1000) },
+    pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }))) !== 0 ? (ClipperLib.Clipper.Area(pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }))) > 0 ? 1 : -1) : 0), 0) > 0;
+  m.neckScrews.forEach(s => {
+    assert.ok(!inBack(s.x, s.y), 'F: back panel open at the screw');
+    assert.ok(inBack(s.x + p.neckScrewHoleMm / 2 + 2, s.y), 'F: back panel solid round the screw hole (the plate bears on it)');
+  });
   // wells mode: counterbores from the back stop wellFloorMm under the pocket
   const w = build('wells', Object.assign(B.styleParams('parlor'), { neckScrewMode: 'wells' }));
   const s0 = w.meta.neckScrews[0];
   const zW = w.meta.pocketFloorZ - p.wellFloorMm;
-  assert.ok(!B.solidAt(w, 'left', s0.x + p.wellDiameterMm / 2 - 1, s0.y, zW - 0.5), 'F: well open below the floor');
-  assert.ok(B.solidAt(w, 'left', s0.x + p.wellDiameterMm / 2 - 1, s0.y, zW + 4), 'F: well roof closes (45deg)');
+  assert.ok(zW - w.meta.neckBlock.bottomZ > 4, 'F: wells start at the neck block underside');
+  assert.ok(!B.solidAt(w, 'neckBlock', s0.x + p.wellDiameterMm / 2 - 1, s0.y, zW - 0.5), 'F: well open below the floor');
+  assert.ok(!B.solidAt(w, 'neckBlock', s0.x + p.wellDiameterMm / 2 - 1, s0.y, w.meta.neckBlock.bottomZ + 0.2), 'F: well open at the block underside');
+  assert.ok(B.solidAt(w, 'neckBlock', s0.x + p.wellDiameterMm / 2 - 1, s0.y, zW + 4), 'F: well roof closes (45deg)');
   approx(w.meta.plasticUnderPocketMm, p.wellFloorMm, 1e-9, 'F: wells keep the floor');
+  approx(w.meta.neckScrewBiteMm, w.meta.neckScrewLengthIn * IN - (1.5 + p.wellFloorMm), 1e-9, 'F: wells: screw = washer + floor + bite');
   assert.ok(w.meta.neckScrewLengthIn <= 2, 'F: wells take standard short screws');
+  // the heads go in through the back panel: well-sized holes
+  const wh = w.meta.panels.back.holes.filter(h => /neck screw well/.test(h.what));
+  assert.strictEqual(wh.length, 4, 'F: wells: 4 well-sized holes in the back panel');
+  wh.forEach(h => approx(h.dMm, p.wellDiameterMm, 1e-9, 'F: well hole size'));
   console.log('Body F ok: pocket', (m.pocket.lengthMm / IN).toFixed(2), 'x', (m.pocket.widthMm / IN).toFixed(3),
-    'in, floor', (0.9).toFixed(1), 'in below the top;', m.plasticUnderPocketMm.toFixed(1), 'mm solid block under it;',
-    'screws', m.neckScrewLengthIn + 'in (plate) /', w.meta.neckScrewLengthIn + 'in (wells)');
+    'in, floor', (0.9).toFixed(1), 'in below the top;', m.plasticUnderPocketMm.toFixed(1), 'mm solid neck block under it (on the back panel);',
+    'screws', m.neckScrewLengthIn + 'in (plate ' + p.plateThicknessMm + ' + ply ' + p.panelThicknessMm + ' + block ' + m.neckScrewStack.blockMm.toFixed(1) + ' mm, ' + m.neckScrewBiteMm.toFixed(1) + ' mm bite) /', w.meta.neckScrewLengthIn + 'in (wells)');
 }
 
-// === Body G: clamshell bolts through the neck and tail blocks ============
+// === Body G: clamshell bolts through the walls and the neck / tail blocks
 {
-  // collar on by default: only the tail bolt runs sideways
-  assert.deepStrictEqual(build('parlor', B.styleParams('parlor')).meta.bolts.map(b => b.name), ['tail', 'tail (upper)']);
-  const p = Object.assign(B.styleParams('parlor'), { neckBolts: 1 });
-  const r = build('parlor-neckbolt', p);
-  const m = r.meta;
+  // the neck block is its own part now: one sideways neck bolt by default
+  // ties the halves together at the neck, plus the low and upper tail bolts
+  const p = B.styleParams('parlor');
+  const r = build('parlor', p);
+  const m = r.meta, ch = m.channel;
   assert.deepStrictEqual(m.bolts.map(b => b.name), ['neck', 'tail', 'tail (upper)']);
   const bolt = B.BOLTS[p.boltSize];
+  const sh = B.shapeOf(p);
   m.bolts.forEach(b => {
-    // clear hole right across both halves at the bolt centre
-    [-60, -20, -1].forEach(x => assert.ok(!B.solidAt(r, 'left', x, b.yMm, b.zMm), `G ${b.name}: hole open at x=${x}`));
-    [1, 20, 60].forEach(x => assert.ok(!B.solidAt(r, 'right', x, b.yMm, b.zMm), `G ${b.name}: hole open at x=${x}`));
-    // material just outside the hole radius
-    assert.ok(B.solidAt(r, 'left', -20, b.yMm + bolt.holeMm / 2 + 0.6, b.zMm), `G ${b.name}: solid beside the hole`);
+    const part = /neck/.test(b.name) ? 'neckBlock' : 'tailBlock';
+    const hwL = B.halfWidth(sh, b.yMm, 'left'), hwR = B.halfWidth(sh, b.yMm, 'right');
+    // clear hole right through both walls and the block at the bolt centre
+    [-(hwL - 1.5), -(hwL - p.wallMm + 0.3)].forEach(x => assert.ok(!B.solidAt(r, 'left', x, b.yMm, b.zMm), `G ${b.name}: hole open in the left wall at x=${x.toFixed(1)}`));
+    [hwR - 1.5].forEach(x => assert.ok(!B.solidAt(r, 'right', x, b.yMm, b.zMm), `G ${b.name}: hole open in the right wall`));
+    [-30, -1, 1, 30].forEach(x => assert.ok(!B.solidAt(r, part, x, b.yMm, b.zMm), `G ${b.name}: hole open through the ${part} at x=${x}`));
+    // wall and block solid just outside the hole radius
+    const yS = b.yMm + bolt.washerMm / 2 + 1.2;
+    assert.ok(B.solidAt(r, 'left', -(B.halfWidth(sh, yS, 'left') - 1.5), yS, b.zMm), `G ${b.name}: wall solid beside the hole`);
+    assert.ok(B.solidAt(r, part, -20, b.yMm + bolt.holeMm / 2 + 0.6, b.zMm), `G ${b.name}: block solid beside the hole`);
     // teardrop: open a little above the round top, closed further up
-    assert.ok(!B.solidAt(r, 'left', -20, b.yMm, b.zMm + bolt.holeMm / 2 + 0.3), `G ${b.name}: teardrop point`);
-    assert.ok(B.solidAt(r, 'left', -20, b.yMm, b.zMm + bolt.holeMm / 2 * Math.SQRT2 + 0.6), `G ${b.name}: solid above the teardrop`);
+    assert.ok(!B.solidAt(r, part, -20, b.yMm, b.zMm + bolt.holeMm / 2 + 0.3), `G ${b.name}: teardrop point`);
+    assert.ok(B.solidAt(r, part, -20, b.yMm, b.zMm + bolt.holeMm / 2 * Math.SQRT2 + 0.6), `G ${b.name}: solid above the teardrop`);
     // flat washer seat (spot face) at the outside wall
-    assert.ok(b.gripMm > 50 && b.gripMm < 2 * B.halfWidth(B.shapeOf(p), b.yMm), `G ${b.name}: grip ${b.gripMm}`);
+    assert.ok(b.gripMm > 50 && b.gripMm < 2 * B.halfWidth(sh, b.yMm), `G ${b.name}: grip ${b.gripMm}`);
     assert.ok(!B.solidAt(r, 'left', -(b.gripMm / 2 + 0.5), b.yMm + bolt.washerMm / 2 - 0.3, b.zMm), `G ${b.name}: washer seat cut`);
     assert.ok(B.solidAt(r, 'left', -(b.gripMm / 2 - 0.5), b.yMm + bolt.washerMm / 2 - 0.3, b.zMm), `G ${b.name}: washer seat is flat (solid inside it)`);
+    // clear of the back channel and its upper lip, and of the top channel's
+    // lower lip: the whole washer seat (teardrop top included) is between them
+    assert.ok(b.zMm - bolt.washerMm / 2 - 0.5 >= ch.backLipTopZ, `G ${b.name}: washer seat (bottom ${(b.zMm - bolt.washerMm / 2 - 0.5).toFixed(2)}) above the back lip (${ch.backLipTopZ.toFixed(2)})`);
+    assert.ok(b.zMm + (bolt.washerMm / 2 + 0.5) * Math.SQRT2 <= ch.topLowerLipZ + 1e-6, `G ${b.name}: washer seat under the top channel's lip`);
+    // the hole runs through solid block only (never through the slab top)
+    assert.ok(b.zMm + bolt.holeMm / 2 * Math.SQRT2 < (/neck/.test(b.name) ? Math.min(m.neckBlock.slabTopZ, m.pocketFloorZ) : (b.name === 'tail' ? m.tailBlock.slabTopZ : m.tailBlock.topZ)), `G ${b.name}: inside the block`);
+    // the back channel stays whole beside the bolt: scanning in from the
+    // outside at the bolt's y, the slot opens at the same x as the lip
+    // under it ends + the lip overlap (the boss and seat are all above it)
+    const zIn = (ch.backSlot[0] + ch.backSlot[1]) / 2;
+    let xs0 = -B.halfWidth(sh, b.yMm, 'left') + 0.3;
+    while (B.solidAt(r, 'left', xs0, b.yMm, zIn)) xs0 += 0.05;
+    let xl = xs0;
+    while (B.solidAt(r, 'left', xl, b.yMm, ch.backSlot[0] / 2)) xl += 0.05;
+    assert.ok(xl - xs0 > 1 && B.solidAt(r, 'left', xs0 + 0.2, b.yMm, ch.backSlot[1] + 0.1), `G ${b.name}: back channel intact at the bolt (slot from ${xs0.toFixed(1)}, lip to ${xl.toFixed(1)})`);
   });
   // the neck bolt passes between the two rows of neck screws, under the pocket floor
   const nb = m.bolts[0];
@@ -442,17 +519,19 @@ function build(name, p) {
   const up = m.bolts.find(b => b.name === 'tail (upper)'), lo = m.bolts.find(b => b.name === 'tail');
   assert.ok(up.zMm > m.topSlot[0] - 12 && up.zMm + bolt.washerMm / 2 * Math.SQRT2 + 1.5 <= m.topSlot[0], 'G: upper tail bolt just under the top channel');
   assert.ok(up.zMm - lo.zMm > 30, 'G: the two tail bolts clamp the bottom and the top of the seam');
-  for (let x = -(up.gripMm / 2 - 1); x < -0.5; x += 2) {
-    assert.ok(B.solidAt(r, 'left', x, up.yMm + bolt.holeMm / 2 + 0.6, up.zMm), `G: solid web beside the upper tail bolt at x=${x.toFixed(0)}`);
+  for (let x = -(up.gripMm / 2 - p.wallMm - 1); x < -0.5; x += 2) {
+    assert.ok(B.solidAt(r, 'tailBlock', x, up.yMm + bolt.holeMm / 2 + 0.6, up.zMm), `G: solid web beside the upper tail bolt at x=${x.toFixed(0)}`);
   }
-  assert.ok(B.solidAt(r, 'left', -40, up.yMm, m.topSlot[0] - 0.5), 'G: tail block reaches the top channel');
+  assert.ok(B.solidAt(r, 'tailBlock', -40, up.yMm, m.topSlot[0] - 0.5), 'G: tail block reaches the top channel');
   const t1 = build('tail1', Object.assign(B.styleParams('parlor'), { tailBolts: 1 }));
-  assert.deepStrictEqual(t1.meta.bolts.map(b => b.name), ['tail'], 'G: tailBolts 1 = the low bolt only');
-  // no tail bolt -> warning
+  assert.deepStrictEqual(t1.meta.bolts.map(b => b.name), ['neck', 'tail'], 'G: tailBolts 1 = the low bolt only');
+  // no tail bolt / no neck bolt -> warnings
   const nt = B.build(Object.assign(B.styleParams('cigar-box'), { tailBolts: 0 }));
   assert.ok(nt.warnings.some(w => /tail bolt/i.test(w)), 'G: warns without a tail bolt');
-  console.log('Body G ok: neck + low and upper tail bolts (' + p.boltSize + ') clear through both halves with teardrop tops and flat washer seats; grips',
-    m.bolts.map(b => b.gripMm.toFixed(0) + ' mm').join(' / '));
+  const nn = B.build(Object.assign(B.styleParams('cigar-box'), { neckBolts: 0 }));
+  assert.ok(nn.warnings.some(w => /No neck bolt/.test(w)), 'G: warns without a neck bolt');
+  console.log('Body G ok: neck + low and upper tail bolts (' + p.boltSize + ') clear through both walls and the blocks with teardrop tops and flat washer seats, above the back channel; heights',
+    m.bolts.map(b => b.zMm.toFixed(1) + ' mm').join(' / '), '; grips', m.bolts.map(b => b.gripMm.toFixed(0) + ' mm').join(' / '));
 }
 
 // === Body H: printable without supports, bed checks ======================
@@ -517,6 +596,7 @@ function build(name, p) {
     const r = B.build(p);
     assert.strictEqual(edgeErrors(r.groups.left) + edgeErrors(r.groups.right), 0, `J ${n}: watertight ${JSON.stringify(p)}`);
     if (r.groups.collar) assert.strictEqual(edgeErrors(r.groups.collar), 0, `J ${n}: collar watertight ${JSON.stringify(p)}`);
+    ["neckBlock", "tailBlock"].forEach(g => assert.strictEqual(edgeErrors(r.groups[g]), 0, `J ${n}: ${g} watertight ${JSON.stringify(p)}`));
     assert.ok(r.meta.overhang.stairLedgeMm <= 1.0 && r.meta.overhang.channelRoofLedgeMm <= p.channelDepthMm * Math.SQRT2 + 0.1, `J ${n}: overhang ${JSON.stringify(r.meta.overhang)}`);
   }
   console.log('Body J ok:', N, 'random bodies watertight');
@@ -532,10 +612,10 @@ function build(name, p) {
     assert.ok(c, `K ${name}: collar on by default`);
     approx(c.bottomZ, zF, 1e-9, `K ${name}: split at the pocket floor`);
     approx(c.topZ, m.topSlot[0], 1e-9, `K ${name}: collar top carries the top panel`);
-    assert.strictEqual(m.bolts.filter(b => /neck/.test(b.name)).length, 0, `K ${name}: no long sideways neck bolt`);
-    // the halves stop at the pocket floor inside the neck block...
-    assert.ok(!B.solidAt(r, 'left', -(pw + 5), L - 30, zF + 1), `K ${name}: half open above the split`);
-    assert.ok(B.solidAt(r, 'left', -(pw + 5), L - 30, zF - 1) || c.bolts.some(b => Math.hypot(b.x + pw + 5, b.y - L + 30) < 6), `K ${name}: half solid below the split`);
+    assert.strictEqual(m.bolts.filter(b => /neck/.test(b.name)).length, 1, `K ${name}: one sideways neck bolt ties the halves at the neck`);
+    // the neck block stops at the pocket floor...
+    assert.ok(!B.solidAt(r, 'left', -(pw + 5), L - 30, zF + 1) && !B.solidAt(r, 'neckBlock', -(pw + 5), L - 30, zF + 1), `K ${name}: open above the split`);
+    assert.ok(B.solidAt(r, 'neckBlock', -(pw + 5), L - 30, zF - 1) || c.bolts.some(b => Math.hypot(b.x + pw + 5, b.y - L + 30) < 6), `K ${name}: neck block solid below the split`);
     // ...and the collar bridges the left/right split
     assert.ok(B.solidAt(r, 'collar', -2, L - m.pocket.lengthMm - 3, zF + 3) && B.solidAt(r, 'collar', 2, L - m.pocket.lengthMm - 3, zF + 3), `K ${name}: collar spans x = 0`);
     // the neck heel bears only on the halves' solid lower block: nothing
@@ -544,21 +624,24 @@ function build(name, p) {
       for (let x = -pw + 1; x < pw - 1; x += 4) {
         assert.ok(!B.solidAt(r, 'collar', x, y, zF + 1), `K ${name}: collar clear of the pocket at ${x.toFixed(0)},${y.toFixed(0)}`);
         const nearScrew = m.neckScrews.some(s => Math.hypot(s.x - x, s.y - y) < p.neckScrewHoleMm / 2 + 0.2);
-        if (!nearScrew) assert.ok(B.solidAt(r, x < 0 ? 'left' : 'right', x, y, zF - 0.5), `K ${name}: pocket floor solid at ${x.toFixed(0)},${y.toFixed(0)}`);
+        if (!nearScrew) assert.ok(['neckBlock', 'left', 'right'].some(h => B.solidAt(r, h, x, y, zF - 0.5)), `K ${name}: pocket floor solid at ${x.toFixed(0)},${y.toFixed(0)}`);
       }
     }
-    // at least one collar bolt into each half; each half's hole runs from
-    // the back face (or a counterbored well) straight up to the split
-    ['left', 'right'].forEach(side => assert.ok(c.bolts.some(b => b.side === side), `K ${name}: a collar bolt into the ${side} half`));
+    // collar bolts on both sides; each hole runs from a counterbored well
+    // in the neck block's underside straight up to the split, and the back
+    // panel has a hole under each well for the head
+    ['left', 'right'].forEach(side => assert.ok(c.bolts.some(b => b.side === side), `K ${name}: a collar bolt on the ${side}`));
     assert.strictEqual(c.bolts.length, 4, `K ${name}: 4 collar bolts`);
+    const zB = m.neckBlock.bottomZ;
     c.bolts.forEach(b => {
-      const half = b.side;
-      for (let z = 0.2; z < zF; z += 0.5) assert.ok(!B.solidAt(r, half, b.x, b.y, z), `K ${name}: collar bolt hole open at z=${z.toFixed(1)}`);
-      assert.ok(B.solidAt(r, half, b.x + c.holeMm / 2 + 0.3, b.y, zF - 1), `K ${name}: snug hole (${c.holeMm} mm) in the half`);
-      if (c.wells) {
-        assert.ok(!B.solidAt(r, half, b.x + bolt.washerMm / 2 + 0.5, b.y, c.seatZ - 0.5), `K ${name}: washer well`);
-        assert.ok(c.seatZ >= 5, `K ${name}: well deep enough to sink the head`);
-      }
+      const half = 'neckBlock';
+      for (let z = zB + 0.2; z < zF; z += 0.5) assert.ok(!B.solidAt(r, half, b.x, b.y, z), `K ${name}: collar bolt hole open at z=${z.toFixed(1)}`);
+      assert.ok(B.solidAt(r, half, b.x + c.holeMm / 2 + 0.3, b.y, zF - 1), `K ${name}: snug hole (${c.holeMm} mm) in the neck block`);
+      assert.ok(c.wells, `K ${name}: counterbored wells`);
+      assert.ok(!B.solidAt(r, half, b.x + bolt.washerMm / 2 + 0.5, b.y, c.seatZ - 0.5), `K ${name}: washer well`);
+      assert.ok(B.solidAt(r, half, b.x + c.wellMm / 2 + 1.5, b.y, zB + 0.5), `K ${name}: the well stays inside the block`);
+      assert.ok(c.seatZ - zB >= 5, `K ${name}: well deep enough to sink the head`);
+      assert.ok(m.panels.back.holes.some(h => /collar/.test(h.what) && Math.hypot(h.x - b.x, h.y - b.y) < 1e-6 && h.dMm >= bolt.washerMm), `K ${name}: back panel hole for the collar bolt head`);
       // nut trap: plastic floor under the nut (the bolt pulls the nut
       // down onto it: compression), hex pocket open to the top
       assert.ok(!B.solidAt(r, 'collar', b.x, b.y, zF + 1), `K ${name}: bolt hole in the collar`);
@@ -586,10 +669,10 @@ function build(name, p) {
   // collar + 2 neck bolts: one is dropped with a warning (they would cross)
   const r2 = B.build(Object.assign(B.styleParams('parlor'), { neckBolts: 2 }));
   assert.ok(r2.warnings.some(w => /only one sideways neck bolt/.test(w)) && r2.meta.bolts.filter(b => b.name.startsWith('neck')).length === 1, 'K: rear neck bolt dropped with the collar');
-  // neither collar nor neck bolt: warn
+  // no neck bolt: warn
   const r0 = B.build(Object.assign(B.styleParams('parlor'), { neckCollar: false, neckBolts: 0 }));
-  assert.ok(r0.warnings.some(w => /No neck collar and no neck bolt/.test(w)), 'K: warns with nothing tying the neck end');
-  console.log('Body K ok: neck block split at the pocket floor; U-shaped collar bridges the halves with 4 vertical',
+  assert.ok(r0.warnings.some(w => /No neck bolt/.test(w)), 'K: warns with nothing tying the neck end');
+  console.log('Body K ok: neck block split at the pocket floor; U-shaped collar bolted onto the one-piece neck block with 4 vertical',
     build('parlor').meta.boltSize, 'bolts (' + build('parlor').meta.collar.boltLengthMm + ' mm), nut traps / heat-set inserts, pocket floor all solid lower block');
 }
 
@@ -601,7 +684,7 @@ function build(name, p) {
       const p = Object.assign(B.styleParams(name), { wallMm: wall });
       const r = build(name + '-wall' + wall, p);
       const m = r.meta;
-      ['left', 'right', 'collar'].forEach(h => assert.strictEqual(edgeErrors(r.groups[h]), 0, `L ${name} ${wall} mm: ${h} watertight`));
+      ['left', 'right', 'collar', 'neckBlock', 'tailBlock'].forEach(h => assert.strictEqual(edgeErrors(r.groups[h]), 0, `L ${name} ${wall} mm: ${h} watertight`));
       assert.ok(m.overhang.stairLedgeMm <= 1.0 && m.overhang.channelRoofLedgeMm <= p.channelDepthMm * Math.SQRT2 + 0.1, `L ${name} ${wall} mm: no supports (${JSON.stringify(m.overhang)})`);
       assert.deepStrictEqual(r.warnings.filter(w => !/print bed/.test(w)), [], `L ${name} ${wall} mm: no warnings`);
       const sh = B.shapeOf(p), y = sh.c1, inner = B.halfWidth(sh, y, 'left') - wall;
@@ -611,8 +694,8 @@ function build(name, p) {
       const zl = m.topSlot[0] - 0.2;
       assert.ok(B.solidAt(r, 'left', -(inner - p.channelDepthMm + 0.3), y, zl) && !B.solidAt(r, 'left', -(inner - p.channelDepthMm - 0.3), y, zl), `L ${name} ${wall} mm: lip reach`);
       // the collar still sits inside the rim with its clearance; blocks stay solid
-      assert.ok(B.solidAt(r, 'left', -5, m.lengthMm - m.pocket.lengthMm / 2, m.pocketFloorZ - 1), `L ${name} ${wall} mm: neck block solid`);
-      assert.ok(B.solidAt(r, 'left', -5, 15 + 6, m.topSlot[0] - 1), `L ${name} ${wall} mm: tail block solid`);
+      assert.ok(B.solidAt(r, 'neckBlock', -5, m.lengthMm - m.pocket.lengthMm / 2 + 8, m.pocketFloorZ - 1), `L ${name} ${wall} mm: neck block solid`);
+      assert.ok(B.solidAt(r, 'tailBlock', -5, 15 + 6, m.topSlot[0] - 1), `L ${name} ${wall} mm: tail block solid`);
       assert.ok(m.collar.bolts.length === 4, `L ${name} ${wall} mm: 4 collar bolts`);
     });
   });
@@ -621,21 +704,46 @@ function build(name, p) {
   console.log('Body L ok: 2 / 3 / 6 mm walls watertight, support-free, channels and blocks intact; under 2 mm is raised to 2 mm');
 }
 
-// === Body M: lip thickness / overlap settings, back channel all round ====
+// === Body M: the back mirrors the top: back channel all round, blocks on the back panel
 {
   const toI = pp => pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }));
-  // the back panel is one piece, and every point along its edge is under a
-  // lip on both faces: along both side walls and across both end-slab faces
-  ['parlor'].forEach(name => {
-    const r = build(name, B.styleParams(name)), m = r.meta, ch = m.channel, p = B.styleParams(name);
+  const areaOf = paths => paths.reduce((a, q) => a + ClipperLib.Clipper.Area(q), 0) / 1e6;
+  function clip(type, a, b) {
+    const c = new ClipperLib.Clipper();
+    c.AddPaths(a, ClipperLib.PolyType.ptSubject, true);
+    c.AddPaths(b, ClipperLib.PolyType.ptClip, true);
+    const out = new ClipperLib.Paths();
+    c.Execute(type, out, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+    return out;
+  }
+  ['parlor', 'small-dread', 'round', 'cigar-box'].forEach(name => {
+    const p = B.styleParams(name), r = build(name, p), m = r.meta, ch = m.channel;
     const outl = m.panels.back.outline;
-    assert.strictEqual(outl.length, 1, `M ${name}: back panel is one piece with no holes`);
+    // one piece covering the whole outline, offset like the top panel:
+    // its outer edge is the inside face of the wall less the edge gap,
+    // everywhere (so not cut short at the blocks)
+    const outer = outl.filter(pp => ClipperLib.Clipper.Area(toI(pp)) > 0);
+    assert.strictEqual(outer.length, 1, `M ${name}: back panel is one piece`);
+    assert.ok(!m.backFloor, `M ${name}: no printed floor anywhere`);
+    const holesN = outl.length - 1;
+    assert.strictEqual(holesN, m.panels.back.holes.length, `M ${name}: the listed holes are cut in the outline`);
+    const sh = B.shapeOf(p);
+    const yb = [2, m.tailBlock.lengthMm / 2, m.lengthMm - m.neckBlock.lengthMm / 2, m.lengthMm - 8];
+    const bb = outer[0].reduce((b, q) => [Math.min(b[0], q[1]), Math.max(b[1], q[1])], [Infinity, -Infinity]);
+    assert.ok(bb[0] < p.wallMm + p.panelEdgeGapMm + 0.2 && bb[1] > m.lengthMm - p.wallMm - p.panelEdgeGapMm - 0.2, `M ${name}: back panel runs from the tail wall to the neck wall (${bb.map(v => v.toFixed(1))})`);
+    const topOuter = m.panels.top.outline.filter(pp => ClipperLib.Clipper.Area(toI(pp)) > 0);
+    // same outline as the top panel, apart from the pocket notch
+    const pocket = [toI([[-m.pocket.widthMm / 2, m.lengthMm - m.pocket.lengthMm], [m.pocket.widthMm / 2, m.lengthMm - m.pocket.lengthMm], [m.pocket.widthMm / 2, m.lengthMm + 50], [-m.pocket.widthMm / 2, m.lengthMm + 50]])];
+    const backLessPocket = clip(ClipperLib.ClipType.ctDifference, [toI(outer[0])], pocket);
+    approx(areaOf(backLessPocket), areaOf(topOuter.map(toI)), 1, `M ${name}: back panel = top panel outline`);
+    // every point along its edge is in the channel: a lip under it, a lip
+    // (or a block standing on it) over it, open where it goes
     const zUnder = ch.backSlot[0] / 2, zOver = ch.backSlot[1] + p.lipMm / 2, zIn = (ch.backSlot[0] + ch.backSlot[1]) / 2;
     const held = p.channelDepthMm - p.panelEdgeGapMm;
-    let n = 0, ends = 0;
+    let n = 0, onBlocks = 0;
     [0.5, held - 0.5].forEach(d => {
       const co = new ClipperLib.ClipperOffset(2, 10);
-      co.AddPaths([toI(outl[0])], ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
+      co.AddPaths([toI(outer[0])], ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
       const sol = new ClipperLib.Paths();
       co.Execute(sol, -d * 1000);
       assert.strictEqual(sol.length, 1, `M ${name}: band ${d} mm in from the panel edge is one loop`);
@@ -647,28 +755,75 @@ function build(name, p) {
           const x = (a.X + (b.X - a.X) * k / steps) / 1000, y = (a.Y + (b.Y - a.Y) * k / steps) / 1000;
           if (Math.abs(x) < 0.4) continue;              // the split plane itself
           const half = x < 0 ? 'left' : 'right';
+          const blk = B.solidAt(r, 'neckBlock', x, y, zOver) || B.solidAt(r, 'tailBlock', x, y, zOver);
           assert.ok(B.solidAt(r, half, x, y, zUnder), `M ${name}: lip under the back panel at ${x.toFixed(1)},${y.toFixed(1)}`);
-          assert.ok(B.solidAt(r, half, x, y, zOver), `M ${name}: lip over the back panel at ${x.toFixed(1)},${y.toFixed(1)}`);
+          // (the only gap is the block clearance between a bolt boss in the
+          // half and the block's notch for it: held on both sides of it)
+          const over = (xx, yy) => ['neckBlock', 'tailBlock', half].some(h => B.solidAt(r, h, xx, yy, zOver));
+          const g = m.blockClearanceMm + 0.1;
+          assert.ok(B.solidAt(r, half, x, y, zOver) || blk || (over(x - g, y) && over(x + g, y)) || (over(x, y - g) && over(x, y + g)), `M ${name}: lip (or block) over the back panel at ${x.toFixed(1)},${y.toFixed(1)}`);
           assert.ok(!B.solidAt(r, half, x, y, zIn), `M ${name}: channel open where the panel goes at ${x.toFixed(1)},${y.toFixed(1)}`);
           n++;
-          if (Math.abs(y - m.tailBlock.lengthMm) < held + 0.6 || Math.abs(y - (m.lengthMm - m.neckBlock.lengthMm)) < held + 0.6) ends++;
+          if (blk) onBlocks++;
         }
       }
     });
-    assert.ok(ends > 40, `M ${name}: the channel crosses both end-slab faces (${ends} samples)`);
-    console.log(`Body M: back channel continuous round the whole back panel (${n} points checked, ${ends} on the neck / tail block faces)`);
+    assert.ok(onBlocks > 40, `M ${name}: the panel edge runs under the blocks too (${onBlocks} samples)`);
+    // nothing printed inside the back panel's space: no part intersects it
+    // anywhere (halves at every slab level in its thickness; the blocks and
+    // the collar start above it)
+    const pz0 = m.panels.backZ[0], pz1 = m.panels.backZ[1];
+    const lv = r.slabs.levels;
+    for (let k = 0; k + 1 < lv.length; k++) {
+      if (lv[k + 1] / 1000 <= pz0 || lv[k] / 1000 >= pz1) continue;
+      ['left', 'right'].forEach(h => {
+        const hit = clip(ClipperLib.ClipType.ctIntersection, r.slabs[h][k], outl.map(toI));
+        assert.ok(Math.abs(areaOf(hit)) < 0.01, `M ${name}: ${h} half intersects the back panel at z=${(lv[k] / 1000).toFixed(2)}`);
+      });
+    }
+    ['neckBlock', 'tailBlock'].forEach(part => assert.ok(r.slabs[part + 'Levels'][0] / 1000 >= pz1 - 1e-9, `M ${name}: ${part} above the back panel`));
+    if (r.slabs.collarLevels) assert.ok(r.slabs.collarLevels[0] / 1000 >= pz1, `M ${name}: collar above the back panel`);
+    // the blocks rest on the back panel's upper face: their undersides are
+    // flush with the channel's upper face and lie wholly over the panel
+    ['neckBlock', 'tailBlock'].forEach(part => {
+      approx(r.slabs[part + 'Levels'][0] / 1000, ch.backSlot[1], 1e-9, `M ${name}: ${part} underside flush with the back channel's upper face`);
+      const foot = r.slabs[part][0];
+      // (it keeps only the block clearance from the walls, so its edge may
+      // reach past the panel's edge gap: under 2% of it, a hair-thin strip)
+      const solidOutline = clip(ClipperLib.ClipType.ctUnion, [toI(outer[0])], []);
+      const out = clip(ClipperLib.ClipType.ctDifference, foot, solidOutline);
+      assert.ok(Math.abs(areaOf(out)) < 0.02 * areaOf(foot), `M ${name}: ${part} underside lies over the back panel (${Math.abs(areaOf(out)).toFixed(1)} mm2 off it)`);
+      const co2 = new ClipperLib.ClipperOffset(2, 10);
+      co2.AddPaths([toI(outer[0])], ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
+      const wallIn = new ClipperLib.Paths(); co2.Execute(wallIn, (p.panelEdgeGapMm - m.blockClearanceMm + 0.01) * 1000);
+      assert.ok(Math.abs(areaOf(clip(ClipperLib.ClipType.ctDifference, foot, wallIn))) < 0.01, `M ${name}: ${part} stays the block clearance inside the walls`);
+      assert.ok(areaOf(foot) > 500, `M ${name}: ${part} has a broad flat underside (${areaOf(foot).toFixed(0)} mm2)`);
+    });
+    // the halves leave the panel's whole face open between the lips: no
+    // printed floor under the blocks any more
+    assert.ok(!B.solidAt(r, 'left', -10, m.tailBlock.lengthMm / 2, 0.5) && !B.solidAt(r, 'left', -10, m.lengthMm - m.neckBlock.lengthMm / 2, 0.5), `M ${name}: back open under the blocks`);
+    if (name === 'parlor') console.log(`Body M: back channel continuous round the whole back panel (${n} points checked, ${onBlocks} of them under the neck / tail blocks); no part in the panel's space`);
+  });
+  // T-Style (paused): the horn beyond the cutaway keeps a printed floor,
+  // and the back channel runs along its edge
+  ['t-style'].forEach(name => {
+    const r = build(name, B.styleParams(name)), m = r.meta;
+    assert.ok(m.backFloor && m.backFloor.side === m.cutawaySide && m.backFloor.areaMm2 < 3000, `M ${name}: printed floor only under the horn`);
+    assert.strictEqual(m.panels.back.outline.filter(pp => ClipperLib.Clipper.Area(toI(pp)) > 0).length, 1, `M ${name}: back panel one piece`);
   });
   // lip thickness and overlap settings, with thin and thick walls
   [[2, 4, 3], [1.6, 3, 2], [3, 6, 2], [2, 2.5, 6], [2.5, 5, 3]].forEach(([lip, ov, wall]) => {
     const name = `lip${lip}-ov${ov}-w${wall}`;
     const p = Object.assign(B.styleParams('parlor'), { lipMm: lip, channelDepthMm: ov, wallMm: wall });
     const r = B.build(p), m = r.meta;
-    ['left', 'right', 'collar'].forEach(h => assert.strictEqual(edgeErrors(r.groups[h]), 0, `M ${name}: ${h} watertight`));
+    ['left', 'right', 'collar', 'neckBlock', 'tailBlock'].forEach(h => assert.strictEqual(edgeErrors(r.groups[h]), 0, `M ${name}: ${h} watertight`));
     assert.ok(signedVolume(r.groups.left) > 0 && signedVolume(r.groups.right) > 0, `M ${name}: outward normals`);
     approx(m.channel.lipMm, lip, 1e-9, `M ${name}: lip`); approx(m.channel.depthMm, ov, 1e-9, `M ${name}: overlap`);
     approx(m.bottomSlot[0], lip, 1e-9, `M ${name}: bottom lip thickness`);
     approx(m.depthMm - m.topSlot[1], lip, 1e-9, `M ${name}: top lip thickness`);
     approx(m.channel.backLipTopZ - m.bottomSlot[1], lip, 1e-9, `M ${name}: back upper lip thickness`);
+    approx(m.neckBlock.bottomZ, m.bottomSlot[1], 1e-9, `M ${name}: blocks follow the back channel`);
+    assert.ok(m.bolts.every(b => b.zMm - B.BOLTS[p.boltSize].washerMm / 2 - 0.5 >= m.channel.backLipTopZ), `M ${name}: bolts clear the back channel`);
     approx(m.topSlot[0] - m.channel.topLowerLipZ, lip, 1e-9, `M ${name}: top lower lip thickness`);
     const sh = B.shapeOf(p), y = p.lowerPos * sh.L, inner = B.halfWidth(sh, y) - wall;
     [m.bottomSlot[0] - 0.1, m.bottomSlot[1] + 0.1, m.topSlot[0] - 0.1, m.topSlot[1] + 0.1].forEach(z => {
@@ -683,7 +838,7 @@ function build(name, p) {
   });
   const fr = B.build(Object.assign(B.styleParams('parlor'), { lipMm: 1.2, channelDepthMm: 2.5 }));
   assert.ok(fr.warnings.some(x => /fragile/.test(x)) && fr.warnings.some(x => /held/.test(x)), 'M: thin lip and short overlap warn');
-  console.log('Body M ok: lip thickness / overlap settings (1.6-3 mm lips, 2.5-6 mm overlap, 2-6 mm walls) watertight, square flat lips, warnings past the limits');
+  console.log('Body M ok: back panel = full outline under the blocks, no part in its space; lip thickness / overlap settings (1.6-3 mm lips, 2.5-6 mm overlap, 2-6 mm walls) watertight, square flat lips, warnings past the limits');
 }
 
 console.log('\nALL BODY TESTS PASSED');

@@ -84,7 +84,10 @@
       { tris: gap ? shifted(g.left, -gap, 0, 0) : g.left, color: WOOD },
       { tris: gap ? shifted(g.right, gap, 0, 0) : g.right, color: WOOD2 }
     ];
-    if (g.collar) layers.push({ tris: gap ? shifted(g.collar, 0, 0, m.depthMm - m.collar.bottomZ + 30) : g.collar, color: [176, 132, 84] });
+    // the neck and tail blocks are separate parts standing on the back panel
+    if (g.neckBlock) layers.push({ tris: gap ? shifted(g.neckBlock, 0, gap * 0.6, 0) : g.neckBlock, color: [196, 150, 96] });
+    if (g.tailBlock) layers.push({ tris: gap ? shifted(g.tailBlock, 0, -gap * 0.6, 0) : g.tailBlock, color: [196, 150, 96] });
+    if (g.collar) layers.push({ tris: gap ? shifted(g.collar, 0, gap * 0.6, m.depthMm - m.collar.bottomZ + 30) : g.collar, color: [176, 132, 84] });
     if (g.cap) layers.push({ tris: gap ? shifted(g.cap, (m.cap.side === 'right' ? 1 : -1) * gap, 0, 30) : g.cap, color: [150, 112, 70] });
     if (viewMode !== 'rim') {
       if (!result.panelTris) {
@@ -128,14 +131,24 @@
     var ch = m.channel;
     $('channel-out').textContent = fmtMm(ch.heightMm) + ' tall; lips reach ' + fmtMm(ch.depthMm) + ' over each panel edge on both faces (' +
       fmtMm(ch.engagementMm) + ' of panel held); flat ' + fmtMm(ch.lipMm) + ' lips, no chamfer; ' + fmtMm(ch.sagMm) +
-      ' sag allowance under the flat lip undersides; back panel held on all four sides (side walls and both end-slab faces)';
+      ' sag allowance under the flat lip undersides; the back channel runs round the whole outer wall, like the top one, and the back panel is one full-outline piece';
     $('pocket-out').textContent = (m.pocket.lengthMm / IN).toFixed(2) + '″ long × ' + (m.pocket.widthMm / IN).toFixed(3) +
       '″ wide, floor ' + (m.pocket.depthMm / IN).toFixed(2) + '″ below the top of the top panel; ' +
-      fmtMm(m.plasticUnderPocketMm) + ' of solid block under the floor';
+      fmtMm(m.plasticUnderPocketMm) + ' of solid neck block under the floor';
+    var nb = m.neckBlock, tb = m.tailBlock;
+    $('blocks-out').textContent = 'separate parts standing on the back panel (undersides flush with the back channel\'s upper face, ' + fmtMm(nb.bottomZ) +
+      ' up): neck block ' + (nb.footprintMm[1] / IN).toFixed(2) + '″ × ' + (nb.footprintMm[0] / IN).toFixed(2) + '″ × ' + fmtMm(nb.heightMm) +
+      ', tail block ' + (tb.footprintMm[1] / IN).toFixed(2) + '″ × ' + (tb.footprintMm[0] / IN).toFixed(2) + '″ × ' + fmtMm(tb.heightMm) +
+      '. Each prints standing on its underside. The halves close in sideways round them; bosses behind the bolt washer seats slide into notches in the blocks.';
+    var holes = m.panels.back.holes || [];
+    $('backholes-out').textContent = holes.length ? holes.length + ' holes in the back panel: ' + holes.map(function (h) {
+      return h.what + ' ' + fmtMm(h.dMm) + ' at (' + h.x.toFixed(1) + ', ' + h.y.toFixed(1) + ') mm';
+    }).join('; ') + ' — included in the SVG / DXF' : 'none';
     var bite = ' (' + m.neckScrewBiteMm.toFixed(0) + ' mm into the neck)';
     var screwTxt = m.neckScrewWells
       ? '4 × #8 wood screws, ' + m.neckScrewLengthIn + '″ long' + bite + ', with washers or ferrules in the wells'
-      : '4 × #8 wood screws, ' + m.neckScrewLengthIn + '″ long' + bite + ', through a back plate on the back face';
+      : '4 × #8 wood screws, ' + m.neckScrewLengthIn + '″ long' + bite + ', through a back plate, the back panel and the neck block (' +
+        fmtMm(m.neckScrewStack.plateMm) + ' plate + ' + fmtMm(m.neckScrewStack.backPanelMm) + ' ply + ' + fmtMm(m.neckScrewStack.blockMm) + ' block)';
     $('screws-out').textContent = screwTxt + ' (' + (p.neckScrewSpanXIn).toFixed(3) + '″ × ' + p.neckScrewSpanYIn.toFixed(3) + '″ hole pattern). ' + m.neckScrewNote;
     $('bolts-out').textContent = m.bolts.length ? m.bolts.map(function (b) {
       return b.name + ': ' + m.boltSize + ' × ' + Math.ceil(b.minLengthMm / 5) * 5 + ' mm+ (or threaded rod), clamps ' + b.gripMm.toFixed(0) + ' mm';
@@ -167,12 +180,13 @@
       (p.leftHanded && !m.symmetric ? '-lefty' : '');
     result.names = {
       left: base + '-left-half.stl', right: base + '-right-half.stl', collar: base + '-neck-collar.stl', cap: base + '-cutaway-cap.stl',
+      neckBlock: base + '-neck-block.stl', tailBlock: base + '-tail-block.stl',
       topSvg: base + '-top-panel.svg', backSvg: base + '-back-panel.svg',
       topDxf: base + '-top-panel.dxf', backDxf: base + '-back-panel.dxf'
     };
-    $('filename').textContent = result.names.left + ' · ' + result.names.right + (m.collar ? ' · ' + result.names.collar : '') + (m.cap ? ' · ' + result.names.cap : '');
+    $('filename').textContent = result.names.left + ' · ' + result.names.right + ' · ' + result.names.neckBlock + ' · ' + result.names.tailBlock + (m.collar ? ' · ' + result.names.collar : '') + (m.cap ? ' · ' + result.names.cap : '');
     $('status').textContent = 'Built in ' + (Date.now() - t0) + ' ms — ' +
-      (m.triangles.left + m.triangles.right + m.triangles.collar + m.triangles.cap).toLocaleString() + ' triangles, watertight parts.';
+      (m.triangles.left + m.triangles.right + m.triangles.collar + m.triangles.cap + (m.triangles.neckBlock || 0) + (m.triangles.tailBlock || 0)).toLocaleString() + ' triangles, watertight parts.';
     render(true);
   }
 
@@ -205,15 +219,19 @@
   SELECT_FIELDS.forEach(function (k) { $(k).addEventListener('change', schedule); });
   $('tailBolts').addEventListener('change', schedule);
   $('leftHanded').addEventListener('change', schedule);
-  // the collar replaces the sideways neck bolt; without it, put one back
-  $('neckCollar').addEventListener('change', function () {
-    $('neckBolts').value = $('neckCollar').checked ? '0' : '1';
-    syncShapeRows(); schedule();
-  });
+  // the neck bolt ties the halves at the neck whether or not the collar is on
+  $('neckCollar').addEventListener('change', function () { syncShapeRows(); schedule(); });
   $('bedIn').addEventListener('input', schedule);
 
   $('dl-left').addEventListener('click', function () { if (result) download(STLExport.trianglesToSTL(result.groups.left), result.names.left); });
   $('dl-right').addEventListener('click', function () { if (result) download(STLExport.trianglesToSTL(result.groups.right), result.names.right); });
+  // the blocks print standing on their undersides: move them to z = 0
+  $('dl-neck-block').addEventListener('click', function () {
+    if (result) download(STLExport.trianglesToSTL(shifted(result.groups.neckBlock, 0, 0, -result.meta.neckBlock.bottomZ)), result.names.neckBlock);
+  });
+  $('dl-tail-block').addEventListener('click', function () {
+    if (result) download(STLExport.trianglesToSTL(shifted(result.groups.tailBlock, 0, 0, -result.meta.tailBlock.bottomZ)), result.names.tailBlock);
+  });
   // the collar prints underside down: move it to z = 0 for the STL
   $('dl-collar').addEventListener('click', function () {
     if (result && result.groups.collar) download(STLExport.trianglesToSTL(shifted(result.groups.collar, 0, 0, -result.meta.collar.bottomZ)), result.names.collar);
