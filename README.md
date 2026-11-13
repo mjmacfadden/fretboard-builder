@@ -136,7 +136,8 @@ A second page for a **clamshell guitar body** for small 3- and 4-string
 guitars. Open `body-builder.html` (or use the link at the top of the
 fretboard page) — same panels, preview and offline behaviour.
 
-- **Rim in two mirror-image halves**, split down the centre line (x = 0).
+- **Rim in two halves** (mirror images, except on the single-cutaway
+  T-Style), split down the centre line (x = 0).
   The split runs right through the neck block and the tail block, so each
   half is a "C" that is open on the inside: the ⅛″ (3.175 mm) plywood top
   and back slide sideways into **tracks** cut into the inside of the wall
@@ -158,19 +159,35 @@ fretboard page) — same panels, preview and offline behaviour.
   (~2,900 mm² under the neck heel); nothing spans or bends.
   *Wells* mode adds counterbores from the back for washers or ferrules,
   leaving 1″ of floor, so standard 1¾″ screws reach.
+- **Split neck block (on by default)**: the neck block is split
+  horizontally at the pocket floor. Everything below the floor stays in
+  the two halves (so the neck heel and the neck screws still bear on solid
+  lower block, as above). Everything above it — the pocket's side and end
+  walls — prints as a separate U-shaped **neck collar** that bridges the
+  centre split. Four vertical bolts (two into each half; M4 × 25 mm on the
+  presets) come up from the back face, heads sunk in counterbored wells,
+  through snug holes in the lower block and into hex-nut traps that open
+  at the collar's top (or heat-set inserts in its underside). The bolts
+  pull the collar down onto the lower block, so every printed layer in the
+  joint is in compression. Because the collar is bolted to both halves it
+  replaces the long sideways neck bolt (still available, 1 max with the
+  collar). The collar prints flat on its underside, no supports, and sits
+  0.25 mm inside the rim wall so the second half can close over it.
 - **Clamshell bolts** (M3, M4 or #6) run sideways through full-width end
-  slabs at the bottom of the neck and tail blocks: one at the neck between
-  the two rows of neck screws (optionally a second behind the pocket) and
-  one at the tail. Holes are teardrop-shaped (print without support) with
+  slabs at the bottom of the tail block (and, optionally, the neck block:
+  one between the two rows of neck screws, or a second behind the pocket
+  when the neck collar is off). Holes are teardrop-shaped (print without support) with
   a flat washer seat at each outside wall; they're long, so use threaded
   rod with nuts and washers or long bolts (the page shows the lengths).
   With both ends pinned, each C-half can't bulge at the waist without
   stretching the panels, so no bolt is needed in between. Glue in the
   tracks is optional.
-- **Body styles**: Parlor, Small dreadnought style, Round and Cigar-box
-  style presets; editing any shape field switches to Custom. Everything is
+- **Body styles**: Parlor, Small dreadnought style, Round, Cigar-box
+  style and T-Style (a single-cutaway slab, 12.5″ × 10″ × 1.75″ — the
+  published ~15.9″ × 12.75″ outline scaled to the bed; left-handed
+  option mirrors the cutaway) presets; editing any shape field switches to Custom. Everything is
   checked against the print bed (12.9″ by default) and warned in the page.
-- **Downloads**: an STL for each half, and the top and back panel outlines
+- **Downloads**: an STL for each half, the neck collar STL, and the top and back panel outlines
   as 1:1 SVG (mm, with a 100 mm check bar) or DXF.
 
 Print each half back face down in PETG (or ASA), 6 perimeters, 6 top and

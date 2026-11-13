@@ -22,6 +22,10 @@
  * Every overhang is a 45-degree staircase, so the halves print back-face
  * down with no supports.
  *
+ * Outlines may be asymmetric (the T-Style single cutaway): each side
+ * has its own width function, the halves are simply what lies left and
+ * right of x = 0, so they need not be mirror images.
+ *
  * Pure math, no DOM. In the browser it attaches `window.BodyBuilder`;
  * in Node it uses module.exports so the geometry can be unit-tested.
  */
@@ -37,19 +41,23 @@
   var BIG = 2000 * S;    // "infinity" for half-planes and strips
   var STEP = 0.4;        // staircase step (mm) for every printed overhang
   var ARC_TOL = 0.03 * S;
+  var FLOOR_MIN = 15;    // mm of printed block kept under the neck pocket floor
 
   // Clearance holes / washers for the clamshell bolts.
   var BOLTS = {
-    M3: { label: 'M3', holeMm: 3.4, washerMm: 7.0, nutMm: 2.4, washerTMm: 0.5 },
-    M4: { label: 'M4', holeMm: 4.5, washerMm: 9.0, nutMm: 3.2, washerTMm: 0.8 },
-    '#6': { label: '#6', holeMm: 3.8, washerMm: 9.5, nutMm: 2.8, washerTMm: 1.2 }
+    // nomMm: thread size; nutAFMm: nut across flats; insertHoleMm /
+    // insertLenMm: hole for a common heat-set insert of that thread.
+    M3: { label: 'M3', holeMm: 3.4, washerMm: 7.0, nutMm: 2.4, washerTMm: 0.5, nomMm: 3.0, nutAFMm: 5.5, insertHoleMm: 4.0, insertLenMm: 5.7 },
+    M4: { label: 'M4', holeMm: 4.5, washerMm: 9.0, nutMm: 3.2, washerTMm: 0.8, nomMm: 4.0, nutAFMm: 7.0, insertHoleMm: 5.6, insertLenMm: 8.1 },
+    '#6': { label: '#6', holeMm: 3.8, washerMm: 9.5, nutMm: 2.8, washerTMm: 1.2, nomMm: 3.5, nutAFMm: 7.94, insertHoleMm: 4.8, insertLenMm: 7.1 }
   };
+  var METRIC_LENGTHS = [8, 10, 12, 16, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 80, 90, 100];
 
   // Every user-adjustable value with its default. Big dimensions are in
   // inches (like the fretboard builder), fine clearances in millimetres.
   var DEFAULTS = {
     style: 'parlor',
-    shape: 'bouts',          // 'bouts' (lower bout / waist / upper bout) or 'box'
+    shape: 'bouts',          // 'bouts' (lower bout / waist / upper bout), 'box', or 'tstyle' (single cutaway)
     lengthIn: 12.5,
     lowerWidthIn: 9.5,
     waistWidthIn: 5.75,
@@ -57,7 +65,7 @@
     lowerPos: 0.30,          // widest point of the lower bout, fraction of length from the tail
     waistPos: 0.57,
     upperPos: 0.80,
-    widthIn: 7.0,            // box shape only
+    widthIn: 7.0,            // box and T-Style shapes
     cornerRadiusIn: 0.5,     // box shape only
     depthIn: 3.25,           // rim height = overall body depth
     wallMm: 6.0,             // rim wall thickness (outside to inside face)
@@ -85,9 +93,14 @@
     plateThicknessMm: 3.0,
     screwBiteMm: 19.0,       // thread length wanted in the wooden neck
     boltSize: 'M4',
-    neckBolts: 1,
+    neckBolts: 0,            // sideways bolts through the neck block (0 with the neck collar)
     tailBolts: 1,
-    bedMm: 327.66            // 12.9"
+    neckCollar: true,        // print the upper neck block (pocket walls) as its own part, bolted down vertically
+    collarFastener: 'nut',   // 'nut' (hex nut traps, dropped in from the top) or 'insert' (heat-set inserts)
+    collarClearanceMm: 0.25, // gap between the collar and the rim's inside wall
+    collarNutFloorMm: 8.0,   // collar plastic between the nut and the collar's underside
+    bedMm: 327.66,           // 12.9"
+    leftHanded: false        // mirror asymmetric outlines (cutaway on the other side)
   };
 
   // Body style presets (generic names). Values not listed keep defaults.
@@ -110,9 +123,16 @@
     'cigar-box': {
       label: 'Cigar-box style',
       values: { shape: 'box', lengthIn: 12.0, widthIn: 7.0, cornerRadiusIn: 0.5, depthIn: 3.0 }
+    },
+    // Single-cutaway slab body. Published full-size outlines of this
+    // style are about 15.9" x 12.75"; scaled by 12.5 / 15.9 that is
+    // 12.5" x 10.0", which leaves ~10 mm spare on a 12.9" bed.
+    't-style': {
+      label: 'T-Style',
+      values: { shape: 'tstyle', lengthIn: 12.5, widthIn: 10.0, depthIn: 1.75 }
     }
   };
-  var STYLE_KEYS = ['parlor', 'small-dread', 'round', 'cigar-box'];
+  var STYLE_KEYS = ['parlor', 'small-dread', 'round', 'cigar-box', 't-style'];
   var STYLE_FIELDS = ['shape', 'lengthIn', 'lowerWidthIn', 'waistWidthIn', 'upperWidthIn',
     'lowerPos', 'waistPos', 'upperPos', 'widthIn', 'cornerRadiusIn', 'depthIn'];
 
@@ -151,6 +171,24 @@
   // ------------------------------------------------------------------
   function shapeOf(p) {
     var L = p.lengthIn * IN;
+    if (p.shape === 'tstyle') {
+      // Proportions (fractions of length L from the tail, and of width W)
+      // read off published outlines of the single-cutaway slab style.
+      var W = p.widthIn * IN;
+      // treble-side neck-end edge: the pocket plus a 1/2" printed wall
+      var pocketHalf = (p.pocketWidthIn !== undefined ? p.pocketWidthIn : DEFAULTS.pocketWidthIn) * IN / 2 +
+        (p.pocketFitMm !== undefined ? p.pocketFitMm : DEFAULTS.pocketFitMm);
+      var b = Math.min(pocketHalf + 12.7, 0.45 * W - 5);
+      var a = Math.max(b, 0.2 * W);                 // bass-side end of the flat neck edge
+      var c1 = 0.29 * L;                             // lower bout widest point
+      var cut0 = 0.70 * L;                           // where the cutaway starts
+      var corner0 = 0.87 * L;                        // bass horn widest point / corner start
+      var treble = { pts: [[c1, 0.5 * W], [0.60 * L, 0.44 * W], [cut0, 0.45 * W]], end: 'cutaway', endX: b };
+      var bass = { pts: [[c1, 0.5 * W], [0.60 * L, 0.435 * W], [corner0, 0.45 * W]], end: 'corner', endX: a };
+      return { kind: 'tstyle', L: L, W: W, c1: c1, a: a, b: b,
+        right: p.leftHanded ? bass : treble, left: p.leftHanded ? treble : bass,
+        cutawaySide: p.leftHanded ? 'left' : 'right' };
+    }
     if (p.shape === 'box') {
       var hwb = p.widthIn * IN / 2;
       var r = Math.max(0.5, Math.min(p.cornerRadiusIn * IN, hwb - 0.5, L / 2 - 0.5));
@@ -166,8 +204,11 @@
 
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
-  function halfWidth(sh, y) {
+  // Distance from the centre line (x = 0) to the outline at y, on the
+  // 'right' (+x, default) or 'left' (-x) side.
+  function halfWidth(sh, y, side) {
     var L = sh.L;
+    if (sh.kind === 'tstyle') return tstyleSide(sh, y, side === 'left' ? sh.left : sh.right);
     if (y <= 0 || y >= L) return 0;
     if (sh.kind === 'box') {
       var r = sh.r, d = 0;
@@ -192,9 +233,56 @@
     return sh.hw + (sh.h2 - sh.hw) * (1 - Math.cos(Math.PI * t2)) / 2;
   }
 
+  var TAIL_N = 2.6, CORNER_N = 2.2;
+  function blend(pts, y) { // zero-slope cosine blends between control points
+    for (var i = 0; i + 1 < pts.length; i++) {
+      var p0 = pts[i], p1 = pts[i + 1];
+      if (y <= p1[0]) {
+        var t = p1[0] > p0[0] ? (y - p0[0]) / (p1[0] - p0[0]) : 1;
+        return p0[1] + (p1[1] - p0[1]) * (1 - Math.cos(Math.PI * clamp(t, 0, 1))) / 2;
+      }
+    }
+    return pts[pts.length - 1][1];
+  }
+  function tstyleSide(sh, y, side) {
+    var L = sh.L;
+    if (y <= 0) return 0;
+    if (y >= L) return side.endX;                    // flat (squared-off) neck end
+    if (y <= sh.c1) {                                 // flat-ish tail with rounded corners
+      var u = (sh.c1 - y) / sh.c1;
+      return sh.W / 2 * Math.pow(1 - Math.pow(u, TAIL_N), 1 / TAIL_N);
+    }
+    var last = side.pts[side.pts.length - 1];
+    if (y <= last[0]) return blend(side.pts, y);
+    var t = (y - last[0]) / (L - last[0]);
+    if (side.end === 'corner') {                      // rounded corner into the flat end
+      return side.endX + (last[1] - side.endX) * Math.pow(1 - Math.pow(t, CORNER_N), 1 / CORNER_N);
+    }
+    // cutaway: rounds over the shoulder, then sweeps in (concave) to run
+    // along the neck pocket's wall
+    var tt = t, sm = tt * tt * (3 - 2 * tt);           // ~18 mm shoulder radius on the presets
+    return side.endX + (last[1] - side.endX) * (1 - sm);
+  }
+
   // Closed outline, counter-clockwise, in mm: [[x, y], ...]
   function outlinePoints(sh) {
     var L = sh.L, ys = [], i;
+    if (sh.kind === 'tstyle') {
+      var N = 40;
+      for (i = 0; i <= N; i++) ys.push(sh.c1 * Math.pow(i / N, 2.5));
+      var yEnd = Math.min(sh.right.pts[2][0], sh.left.pts[2][0]);
+      var m = Math.ceil((yEnd - sh.c1) / 4);
+      for (i = 1; i < m; i++) ys.push(sh.c1 + (yEnd - sh.c1) * i / m);
+      [sh.right, sh.left].forEach(function (side) {
+        var y0 = side.pts[2][0], n2 = 48;
+        for (var j = 0; j <= n2; j++) ys.push(y0 + (L - y0) * (side.end === 'corner' ? 1 - Math.pow(1 - j / n2, 2.5) : j / n2));
+      });
+      ys = dedupe(ys);
+      var pts = [[0, 0]];
+      ys.forEach(function (y) { if (y > 0) pts.push([halfWidth(sh, y, 'right'), y]); });
+      for (i = ys.length - 1; i >= 0; i--) if (ys[i] > 0) pts.push([-halfWidth(sh, ys[i], 'left'), ys[i]]);
+      return pts;
+    }
     if (sh.kind === 'box') {
       var n = 12;
       for (i = 0; i <= n; i++) ys.push(sh.r * (1 - Math.cos(Math.PI / 2 * i / n)));
@@ -577,17 +665,37 @@
     var p = withDefaults(input);
     var warnings = [];
     var sh = shapeOf(p);
-    var L = sh.L, D = p.depthIn * IN;
+    var L = sh.L, Dreq = p.depthIn * IN;
     var bolt = BOLTS[p.boltSize] || BOLTS.M4;
     var t = p.panelThicknessMm, fit = p.panelFitMm, g = p.grooveDepthMm, ec = p.panelEdgeGapMm;
+
+    // Minimum depth: the pocket floor needs at least FLOOR_MIN mm of block
+    // under it and must stay 3 mm above the teardrop of the neck bolt that
+    // runs under the pocket; the middle zone needs 5 mm between the end
+    // slabs and the top track. Shallower requests are raised to it.
+    var baseTop0 = Math.max(p.baseBlockMm, p.bottomLipMm + t + fit + Math.ceil(g / STEP - 1e-9) * STEP + 0.4);
+    var collarOn = !!p.neckCollar && p.neckCollar !== 'false';
+    if (collarOn && p.neckBolts >= 2) {
+      warnings.push('With the neck collar, only one sideways neck bolt fits (the rear one would cross the collar bolts); using 1.');
+      p.neckBolts = 1;
+    }
+    if (!collarOn && p.neckBolts < 1) warnings.push('No neck collar and no neck bolt: only the neck screws and back plate hold the halves together at the neck. Turn the collar on or add a neck bolt.');
+    var floorReq = Math.max(FLOOR_MIN, p.neckBolts >= 1 ? baseTop0 / 2 + (BOLTS[p.boltSize] || BOLTS.M4).holeMm / 2 * Math.SQRT2 + 3 : 0);
+    var Dmin = Math.max(floorReq + p.pocketDepthIn * IN + p.topLipMm + fit, baseTop0 + 5 + t + fit + p.topLipMm);
+    var D = Math.max(Dreq, Dmin);
+    if (Dreq < Dmin - 1e-9) {
+      warnings.push('Body depth raised to the minimum ' + (Dmin / IN).toFixed(2) + '″ (' + Dmin.toFixed(1) + ' mm): the ' +
+        p.pocketDepthIn.toFixed(2) + '″ pocket needs ' + floorReq.toFixed(1) + ' mm of block under its floor, clear of the neck bolt.');
+    }
     var pl = p.pocketLengthIn * IN, pw2 = p.pocketWidthIn * IN / 2 + p.pocketFitMm;
     var bl = pl + p.neckBlockEndMm;                 // neck block length (from the neck end)
     var kw = pw2 + p.neckBlockSideMm;               // neck block half width
     var tbl = p.tailBlockLengthMm, tw = p.tailBlockWidthMm / 2;
 
     var outline = outlinePoints(sh);
-    var maxHw = 0;
-    outline.forEach(function (q) { maxHw = Math.max(maxHw, Math.abs(q[0])); });
+    var maxR = 0, maxL = 0;
+    outline.forEach(function (q) { if (q[0] > 0) maxR = Math.max(maxR, q[0]); else maxL = Math.max(maxL, -q[0]); });
+    var maxHw = Math.max(maxR, maxL);
 
     // heights
     var zBL = p.bottomLipMm, zBS = zBL + t + fit;          // back panel slot
@@ -605,9 +713,13 @@
     if (p.neckBolts >= 2) boltYs.push({ name: 'neck (rear)', y: L - bl + Math.max(9, rSpot + 4) });
     if (p.tailBolts >= 1) boltYs.push({ name: 'tail', y: Math.max(rSpot + 3, tbl / 2) });
     boltYs.forEach(function (b) {
-      var minHw = Infinity;
-      for (var s2 = -1; s2 <= 1.0001; s2 += 0.05) minHw = Math.min(minHw, halfWidth(sh, b.y + s2 * rSpot));
-      b.xs = minHw - 1.0; // flat washer seat, just inside the wall
+      var minR = Infinity, minL = Infinity;
+      for (var s2 = -1; s2 <= 1.0001; s2 += 0.05) {
+        minR = Math.min(minR, halfWidth(sh, b.y + s2 * rSpot, 'right'));
+        minL = Math.min(minL, halfWidth(sh, b.y + s2 * rSpot, 'left'));
+      }
+      b.xs = minR - 1.0;  // flat washer seats, just inside each wall
+      b.xsL = minL - 1.0;
       b.hole = teardropBands(rHole, boltZ);
       b.spot = teardropBands(rSpot, boltZ);
     });
@@ -683,6 +795,130 @@
     }
     addF(wellTop, zF, screwHoles);
 
+    // ---- neck collar: the neck block above the pocket floor (the pocket's
+    // side and end walls) as a separate U-shaped part that bridges the
+    // left/right split. Vertical bolts come up from the back face through
+    // each half's lower block into nut traps (or heat-set inserts) in the
+    // collar, so the collar ties the halves together at the neck and the
+    // neck screws still clamp only the solid lower block.
+    var collar = null, collarRegions = null, collarLevels = null, collarBase = null, collarInfo = null;
+    if (collarOn) {
+      var KI = P(inter(K, I));
+      addF(zF, zTS0, KI);                         // the halves stop at the pocket floor here
+      collarBase = diff(inter(K, P(offset(I, -p.collarClearanceMm))), pocket);
+      var rSnug = (bolt.nomMm + 0.2) / 2;
+      var hexR = (bolt.nutAFMm + 0.4) / Math.sqrt(3);   // corner radius of the nut trap
+      var rSpotN = bolt.washerMm / 2 + 0.5;
+      var needR = p.collarFastener === 'insert' ? bolt.insertHoleMm / 2 + 2.0 : hexR + 1.6;
+      var inner = offset(collarBase, -needR);
+      var cands = [];
+      var endY = L - pl - p.neckBlockEndMm / 2;
+      function inside(paths, x, y) {
+        var pt = { X: Math.round(x * S), Y: Math.round(y * S) }, wind = 0;
+        paths.forEach(function (path) {
+          if (ClipperLib.Clipper.PointInPolygon(pt, path) !== 0) wind += ClipperLib.Clipper.Area(path) > 0 ? 1 : -1;
+        });
+        return wind > 0;
+      }
+      ['left', 'right'].forEach(function (side) {
+        var sg = side === 'right' ? 1 : -1;
+        // beside the pocket: start 30% of the pocket in from the neck end
+        // and move towards the body until the wall is wide enough (a
+        // cutaway narrows the treble wall near the neck end), keeping
+        // clear of a sideways neck bolt
+        var best = null;
+        for (var fy = 0.3; fy <= 0.85 + 1e-9 && !best; fy += 0.05) {
+          var y = L - fy * pl;
+          if (p.neckBolts >= 1 && Math.abs(y - (L - pl / 2)) < rSpotN + needR + 1.5) continue;
+          var edge = kw;
+          for (var s3 = -1; s3 <= 1.0001; s3 += 0.1) edge = Math.min(edge, halfWidth(sh, y + s3 * needR, side) - p.wallMm - p.collarClearanceMm);
+          var x = sg * (pw2 + edge) / 2;
+          if (inside(inner, x, y)) best = { x: x, y: y };
+        }
+        cands.push({ side: side, where: 'beside the pocket', x: best ? best.x : sg * (pw2 + kw) / 2, y: best ? best.y : L - 0.3 * pl });
+        cands.push({ side: side, where: 'behind the pocket', x: sg * Math.max(pw2 * 0.55, needR + 1), y: endY });
+      });
+      var cb = cands.filter(function (c) { return inside(inner, c.x, c.y); });
+      cands.forEach(function (c) {
+        if (cb.indexOf(c) < 0) warnings.push('No room for the ' + c.side + ' collar bolt ' + c.where + '; it was left out.');
+      });
+      ['left', 'right'].forEach(function (side) {
+        if (!cb.some(function (c) { return c.side === side; })) warnings.push('The neck collar has no bolt into the ' + side + ' half; widen the neck block.');
+      });
+      var cHoles = cb.length ? union.apply(null, cb.map(function (c) { return circle(c.x, c.y, rSnug, 32); })) : [];
+      // in the halves: snug holes from the back face (or from counterbored
+      // wells) up to the pocket floor
+      var floorC = Math.min(12, zF - 6), seatZ = 0;
+      if (floorC >= 8 && cb.length) {
+        var rWc = bolt.washerMm / 2 + 1;
+        var zWc = zF - floorC;
+        addF(0, zWc, union.apply(null, cb.map(function (c) { return circle(c.x, c.y, rWc, 32); })));
+        seatZ = zWc;
+        gridBands(zWc, zWc + (rWc - rSnug)).forEach(function (band) {
+          var r = rWc - (band[1] - zWc);
+          if (r < rSnug + 0.05) r = rSnug;
+          addF(band[0], band[1], union.apply(null, cb.map(function (c) { return circle(c.x, c.y, r, 32); })));
+        });
+      }
+      addF(seatZ, zF, cHoles);
+      // in the collar
+      var CF = [];
+      function addC(z0, z1, v) { if (z1 - z0 > 1e-6 && v.length) CF.push({ z0: z0, z1: z1, v: v }); }
+      var H = zTS0 - zF, boltMin, boltMax, collarTop = zTS0;
+      if (p.collarFastener === 'insert') {
+        var rI = bolt.insertHoleMm / 2, zI = zF + Math.min(bolt.insertLenMm + 1.5, H - 4);
+        addC(zF, zI, union.apply(null, cb.map(function (c) { return circle(c.x, c.y, rI, 32); })));
+        var zz = zI;
+        gridBands(zI, zI + rI).forEach(function (band) {
+          var r = rI - (band[1] - zI);
+          if (r <= 0.05) return;
+          addC(band[0], band[1], union.apply(null, cb.map(function (c) { return circle(c.x, c.y, r, 24); })));
+          zz = band[1];
+        });
+        boltMin = (zF - seatZ) + bolt.washerTMm + 0.6 * bolt.insertLenMm;
+        boltMax = (zF - seatZ) + bolt.washerTMm + (zI - zF) - 0.3;
+      } else {
+        var zN = zF + Math.min(p.collarNutFloorMm, H - bolt.nutMm - 2);
+        addC(zF, zN, cHoles);
+        addC(zN, zTS0, union.apply(null, cb.map(function (c) {
+          var hp = [];
+          for (var h = 0; h < 6; h++) hp.push([c.x + hexR * Math.cos(h * Math.PI / 3), c.y + hexR * Math.sin(h * Math.PI / 3)]);
+          return [toPath(hp)];
+        })));
+        boltMin = (zF - seatZ) + bolt.washerTMm + (zN - zF) + bolt.nutMm + 1;
+        boltMax = (zF - seatZ) + bolt.washerTMm + H - 0.5;   // must stay under the top panel
+      }
+      var boltLen = null;
+      for (var bi = 0; bi < METRIC_LENGTHS.length; bi++) if (METRIC_LENGTHS[bi] >= boltMin - 1e-9) { boltLen = METRIC_LENGTHS[bi]; break; }
+      var boltNote = '';
+      if (boltLen === null || boltLen > boltMax + 1e-9) {
+        boltNote = 'No stock length fits between ' + boltMin.toFixed(1) + ' and ' + boltMax.toFixed(1) + ' mm; cut a longer bolt to ' + Math.ceil(boltMin) + ' mm.';
+      }
+      // collar slabs (its own part; z kept in body coordinates here)
+      var clv = [zF, zTS0];
+      CF.forEach(function (f) { clv.push(f.z0, f.z1); });
+      clv = clv.map(function (z) { return Math.round(z * S); }).sort(function (a, b) { return a - b; });
+      collarLevels = [];
+      clv.forEach(function (z) { if (!collarLevels.length || z > collarLevels[collarLevels.length - 1]) collarLevels.push(z); });
+      var CFi = CF.map(function (f) { return { z0: Math.round(f.z0 * S), z1: Math.round(f.z1 * S), v: f.v }; });
+      collarRegions = [];
+      for (var ck = 0; ck + 1 < collarLevels.length; ck++) {
+        var cv = [];
+        CFi.forEach(function (f) { if (f.z0 <= collarLevels[ck] && f.z1 >= collarLevels[ck + 1]) cv = cv.concat(f.v); });
+        collarRegions.push(cv.length ? diff(collarBase, union(cv)) : collarBase);
+      }
+      collar = meshSlabs(collarLevels, collarRegions);
+      var cbb = bbox(collarBase);
+      collarInfo = {
+        fastener: p.collarFastener === 'insert' ? 'insert' : 'nut',
+        bolts: cb.map(function (c) { return { side: c.side, where: c.where, x: c.x, y: c.y }; }),
+        heightMm: H, bottomZ: zF, topZ: zTS0, footprintMm: [cbb[2] - cbb[0], cbb[3] - cbb[1]],
+        sizeXYMm: cbb, holeMm: 2 * rSnug, nutTrapAFMm: bolt.nutAFMm + 0.4,
+        seatZ: seatZ, wells: seatZ > 0, boltLengthMm: boltLen, boltMinMm: boltMin, boltMaxMm: boltMax, boltNote: boltNote,
+        clearanceMm: p.collarClearanceMm, areaMm2: areaMm2(collarBase)
+      };
+    }
+
     if (boltZ - rSpot < 0.8 || boltZ + rSpot * Math.SQRT2 > baseTop - 0.8) {
       warnings.push('The end slabs (' + baseTop.toFixed(1) + ' mm) are too thin for ' + bolt.label + ' bolt spot-faces; raise "End slab height".');
     }
@@ -693,9 +929,9 @@
         addF(hb.z0, hb.z1, rect(-BIG / S, b.y - hb.half, BIG / S, b.y + hb.half));
       });
       b.spot.forEach(function (sb) {
-        addF(sb.z0, sb.z1, union(rect(b.xs, b.y - sb.half, BIG / S, b.y + sb.half), rect(-BIG / S, b.y - sb.half, -b.xs, b.y + sb.half)));
+        addF(sb.z0, sb.z1, union(rect(b.xs, b.y - sb.half, BIG / S, b.y + sb.half), rect(-BIG / S, b.y - sb.half, -b.xsL, b.y + sb.half)));
       });
-      var grip = 2 * b.xs;
+      var grip = b.xs + b.xsL;
       var len = grip + 2 * bolt.washerTMm + bolt.nutMm + 2;
       boltInfo.push({ name: b.name, yMm: b.y, zMm: boltZ, gripMm: grip, minLengthMm: len });
     });
@@ -733,6 +969,16 @@
       while (w < 50 && offset(dn, -(w + 0.05)).length) w += 0.05;
       maxLedge = Math.max(maxLedge, 2 * w);
     }
+    if (collarRegions) {
+      for (k = 1; k < collarRegions.length; k++) {
+        var dnc = diff(collarRegions[k], collarRegions[k - 1]);
+        if (!dnc.length) continue;
+        downArea += areaMm2(dnc);
+        var wc = 0;
+        while (wc < 50 && offset(dnc, -(wc + 0.05)).length) wc += 0.05;
+        maxLedge = Math.max(maxLedge, 2 * wc);
+      }
+    }
 
     // ---- panels (1:1 outlines, mm)
     var topPanel = diff(offset(I, g - ec), pocket);
@@ -741,10 +987,8 @@
     // ---- checks and warnings
     var bed = p.bedMm;
     if (L >= bed) warnings.push('Body length ' + (L / IN).toFixed(2) + '″ does not fit the ' + (bed / IN).toFixed(2) + '″ print bed; keep it under ' + (bed / IN).toFixed(2) + '″.');
-    if (maxHw >= bed) warnings.push('Each half is ' + (maxHw / IN).toFixed(2) + '″ wide, more than the print bed.');
-    if (zF < 19) warnings.push('Only ' + zF.toFixed(1) + ' mm of block under the neck pocket; use a deeper body (3″ or more recommended).');
+    if (maxHw >= bed) warnings.push('A half is ' + (maxHw / IN).toFixed(2) + '″ wide, more than the print bed.');
     if (p.neckScrewMode === 'wells' && plasticUnderPocket < 19) warnings.push('Only ' + plasticUnderPocket.toFixed(1) + ' mm of printed floor between the screw wells and the pocket; 19 mm or more recommended.');
-    if (zF <= baseTop + 1) warnings.push('The pocket floor is below the top of the end slabs; the neck bolt may break into the pocket. Use a deeper body.');
     var backLen = (L - bl) - tbl;
     if (backLen < 60) warnings.push('The neck and tail blocks leave only ' + backLen.toFixed(0) + ' mm for the back panel; shorten the pocket or the blocks, or lengthen the body.');
     if (zTS0 - baseTop < 5) warnings.push('The body is too shallow for the end slabs and the top track; increase the depth.');
@@ -772,10 +1016,13 @@
     var lpanelBox = bbox(topPanel), bpanelBox = bbox(backPanel);
 
     var groups = { left: left, right: right };
+    if (collar) groups.collar = collar;
     var meta = {
       params: p,
-      lengthMm: L, widthMm: 2 * maxHw, depthMm: D,
-      halfFootprintMm: [maxHw, L], halfHeightMm: D, fitsBed: L < bed && maxHw < bed, bedMm: bed,
+      lengthMm: L, widthMm: maxL + maxR, depthMm: D, requestedDepthMm: Dreq, minDepthMm: Dmin,
+      halfFootprintMm: [maxHw, L], leftFootprintMm: [maxL, L], rightFootprintMm: [maxR, L],
+      symmetric: sh.kind !== 'tstyle', cutawaySide: sh.cutawaySide || null,
+      halfHeightMm: D, fitsBed: L < bed && maxHw < bed, bedMm: bed,
       panelTopZ: panelTopZ, pocketFloorZ: zF, topSlot: [zTS0, zTS1], bottomSlot: [zBL, zBS],
       baseTopMm: baseTop, neckBlock: { lengthMm: bl, widthMm: 2 * kw, heightMm: zTS0 },
       tailBlock: { lengthMm: tbl, widthMm: 2 * tw, heightMm: zTS0 },
@@ -783,7 +1030,7 @@
       plasticUnderPocketMm: plasticUnderPocket,
       neckScrews: screws.map(function (q) { return { x: q[0], y: q[1] }; }),
       neckScrewThroughMm: throughMm, neckScrewLengthIn: screwIn, neckScrewNeedMm: screwMm, neckScrewBiteMm: biteMm, neckScrewWells: wellsUsed, neckScrewNote: screwNote,
-      bolts: boltInfo, boltSize: bolt.label,
+      bolts: boltInfo, boltSize: bolt.label, collar: collarInfo,
       panels: {
         top: { outline: pathsToMm(topPanel), sizeMm: [lpanelBox[2] - lpanelBox[0], lpanelBox[3] - lpanelBox[1]], areaMm2: areaMm2(topPanel) },
         back: { outline: pathsToMm(backPanel), sizeMm: [bpanelBox[2] - bpanelBox[0], bpanelBox[3] - bpanelBox[1]], areaMm2: areaMm2(backPanel) },
@@ -791,16 +1038,18 @@
       },
       overhang: { downFacingAreaMm2: downArea, widestLedgeMm: maxLedge },
       levels: levels.length, outline: outline,
-      triangles: { left: left.length / 9, right: right.length / 9 }
+      triangles: { left: left.length / 9, right: right.length / 9, collar: collar ? collar.length / 9 : 0 }
     };
     return { groups: groups, meta: meta, warnings: warnings,
-      slabs: { levels: levels, left: leftRegions, right: rightRegions } };
+      slabs: { levels: levels, left: leftRegions, right: rightRegions, collar: collarRegions, collarLevels: collarLevels } };
   }
 
   // Is (x, y, z) (mm) inside the printed material of one half?
   // half = 'left' | 'right'. Used by the tests and handy for debugging.
+  // half = 'collar' for the neck collar (body coordinates).
   function solidAt(result, half, x, y, z) {
-    var lv = result.slabs.levels, zi = z * S, k;
+    var lv = half === 'collar' ? result.slabs.collarLevels : result.slabs.levels, zi = z * S, k;
+    if (!lv) return false;
     for (k = 0; k + 1 < lv.length; k++) if (zi >= lv[k] && zi < lv[k + 1]) break; // on a level: the slab above
     if (k + 1 >= lv.length) return false;
     var pt = { X: Math.round(x * S), Y: Math.round(y * S) }, wind = 0;

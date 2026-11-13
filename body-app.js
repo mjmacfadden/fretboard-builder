@@ -17,8 +17,8 @@
     'grooveDepthMm', 'panelEdgeGapMm', 'topLipMm', 'bottomLipMm', 'pocketLengthIn', 'pocketWidthIn',
     'pocketDepthIn', 'pocketFitMm', 'neckBlockSideMm', 'neckBlockEndMm', 'baseBlockMm',
     'tailBlockLengthMm', 'tailBlockWidthMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
-    'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm'];
-  var SELECT_FIELDS = ['neckScrewMode', 'boltSize', 'neckBolts'];
+    'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm', 'collarClearanceMm', 'collarNutFloorMm'];
+  var SELECT_FIELDS = ['neckScrewMode', 'boltSize', 'neckBolts', 'collarFastener'];
 
   var styleEl = $('style');
   var shape = 'bouts';      // the current outline family (kept when you go Custom)
@@ -33,6 +33,8 @@
     SELECT_FIELDS.forEach(function (k) { p[k] = $(k).value; });
     p.neckBolts = Number(p.neckBolts);
     p.tailBolts = $('tailBolts').checked ? 1 : 0;
+    p.neckCollar = $('neckCollar').checked;
+    p.leftHanded = $('leftHanded').checked;
     var bed = parseFloat($('bedIn').value);
     p.bedMm = (isFinite(bed) ? bed : 12.9) * IN;
     return p;
@@ -41,7 +43,11 @@
   function syncShapeRows() {
     $('bouts-rows').hidden = shape !== 'bouts';
     $('bout-pos-rows').hidden = shape !== 'bouts';
-    $('box-rows').hidden = shape !== 'box';
+    $('box-rows').hidden = shape !== 'box' && shape !== 'tstyle';
+    $('corner-row').hidden = shape !== 'box';
+    $('lefty-row').hidden = shape !== 'tstyle';
+    $('fastener-row').hidden = !$('neckCollar').checked;
+    $('collar-dl-row').hidden = !$('neckCollar').checked;
   }
 
   // Style presets fill in the shape fields (see BodyBuilder.STYLES);
@@ -78,6 +84,7 @@
       { tris: gap ? shifted(g.left, -gap, 0, 0) : g.left, color: WOOD },
       { tris: gap ? shifted(g.right, gap, 0, 0) : g.right, color: WOOD2 }
     ];
+    if (g.collar) layers.push({ tris: gap ? shifted(g.collar, 0, 0, m.depthMm - m.collar.bottomZ + 30) : g.collar, color: [176, 132, 84] });
     if (viewMode !== 'rim') {
       if (!result.panelTris) {
         result.panelTris = {
@@ -108,7 +115,8 @@
 
     $('size-out').textContent = fmtIn(m.lengthMm) + ' long × ' + fmtIn(m.widthMm) + ' wide × ' + fmtIn(m.depthMm) +
       ' deep (' + m.lengthMm.toFixed(0) + ' × ' + m.widthMm.toFixed(0) + ' × ' + m.depthMm.toFixed(0) + ' mm)';
-    $('bed-out').textContent = fmtIn(m.halfFootprintMm[1]) + ' × ' + fmtIn(m.halfFootprintMm[0]) + ' footprint, ' +
+    $('bed-out').textContent = fmtIn(m.halfFootprintMm[1]) + ' × ' + (m.symmetric ? fmtIn(m.halfFootprintMm[0])
+      : fmtIn(m.leftFootprintMm[0]) + ' (left) / ' + fmtIn(m.rightFootprintMm[0]) + ' (right)') + ' footprint, ' +
       fmtIn(m.halfHeightMm) + ' tall — ' + (m.fitsBed
         ? 'fits the ' + fmtIn(m.bedMm) + ' bed (' + (m.bedMm - m.lengthMm).toFixed(1) + ' mm to spare on length)'
         : 'does NOT fit the ' + fmtIn(m.bedMm) + ' bed (' + Math.abs(m.bedMm - m.lengthMm).toFixed(1) + ' mm too long)');
@@ -125,6 +133,14 @@
     $('bolts-out').textContent = m.bolts.length ? m.bolts.map(function (b) {
       return b.name + ': ' + m.boltSize + ' × ' + Math.ceil(b.minLengthMm / 5) * 5 + ' mm+ (or threaded rod), clamps ' + b.gripMm.toFixed(0) + ' mm';
     }).join('; ') + '. Washers both sides.' : 'none';
+    var c = m.collar;
+    $('collar-out').textContent = c
+      ? c.bolts.length + ' × ' + m.boltSize + ' × ' + c.boltLengthMm + ' mm bolts up from the back face' +
+        (c.wells ? ' (heads in counterbored wells)' : '') + ' into ' +
+        (c.fastener === 'insert' ? 'heat-set inserts' : 'hex nuts in traps') + '; collar ' +
+        (c.footprintMm[0] / IN).toFixed(2) + '″ × ' + (c.footprintMm[1] / IN).toFixed(2) + '″ × ' + fmtMm(c.heightMm) +
+        ', split at the pocket floor. ' + c.boltNote
+      : 'off — the neck block is part of each half';
     $('overhang-out').textContent = 'no supports needed — widest unsupported ledge ' + m.overhang.widestLedgeMm.toFixed(1) +
       ' mm (45° staircase steps of ' + B.STEP_MM + ' mm)';
 
@@ -132,15 +148,16 @@
     warnEl.hidden = !w.length;
     warnEl.textContent = w.join(' ');
 
-    var base = 'body-' + (p.style === 'custom' ? 'custom' : p.style) + '-' + p.lengthIn.toFixed(2) + 'in';
+    var base = 'body-' + (p.style === 'custom' ? 'custom' : p.style) + '-' + p.lengthIn.toFixed(2) + 'in' +
+      (p.leftHanded && !m.symmetric ? '-lefty' : '');
     result.names = {
-      left: base + '-left-half.stl', right: base + '-right-half.stl',
+      left: base + '-left-half.stl', right: base + '-right-half.stl', collar: base + '-neck-collar.stl',
       topSvg: base + '-top-panel.svg', backSvg: base + '-back-panel.svg',
       topDxf: base + '-top-panel.dxf', backDxf: base + '-back-panel.dxf'
     };
-    $('filename').textContent = result.names.left + ' · ' + result.names.right;
+    $('filename').textContent = result.names.left + ' · ' + result.names.right + (m.collar ? ' · ' + result.names.collar : '');
     $('status').textContent = 'Built in ' + (Date.now() - t0) + ' ms — ' +
-      (m.triangles.left + m.triangles.right).toLocaleString() + ' triangles, watertight halves.';
+      (m.triangles.left + m.triangles.right + m.triangles.collar).toLocaleString() + ' triangles, watertight parts.';
     render(true);
   }
 
@@ -172,10 +189,20 @@
   NUM_FIELDS.forEach(function (k) { $(k).addEventListener('input', schedule); });
   SELECT_FIELDS.forEach(function (k) { $(k).addEventListener('change', schedule); });
   $('tailBolts').addEventListener('change', schedule);
+  $('leftHanded').addEventListener('change', schedule);
+  // the collar replaces the sideways neck bolt; without it, put one back
+  $('neckCollar').addEventListener('change', function () {
+    $('neckBolts').value = $('neckCollar').checked ? '0' : '1';
+    syncShapeRows(); schedule();
+  });
   $('bedIn').addEventListener('input', schedule);
 
   $('dl-left').addEventListener('click', function () { if (result) download(STLExport.trianglesToSTL(result.groups.left), result.names.left); });
   $('dl-right').addEventListener('click', function () { if (result) download(STLExport.trianglesToSTL(result.groups.right), result.names.right); });
+  // the collar prints underside down: move it to z = 0 for the STL
+  $('dl-collar').addEventListener('click', function () {
+    if (result && result.groups.collar) download(STLExport.trianglesToSTL(shifted(result.groups.collar, 0, 0, -result.meta.collar.bottomZ)), result.names.collar);
+  });
   $('dl-top-svg').addEventListener('click', function () { if (result) download(B.panelSVG(result.meta.panels.top.outline, 'Top panel'), result.names.topSvg, 'image/svg+xml'); });
   $('dl-back-svg').addEventListener('click', function () { if (result) download(B.panelSVG(result.meta.panels.back.outline, 'Back panel'), result.names.backSvg, 'image/svg+xml'); });
   $('dl-top-dxf').addEventListener('click', function () { if (result) download(B.panelDXF(result.meta.panels.top.outline), result.names.topDxf, 'application/dxf'); });

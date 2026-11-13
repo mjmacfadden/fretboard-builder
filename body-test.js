@@ -60,7 +60,7 @@ function build(name, p) {
 
 // === Body A: style presets, generic names, Custom detection ==============
 {
-  assert.deepStrictEqual(B.STYLE_KEYS, ['parlor', 'small-dread', 'round', 'cigar-box']);
+  assert.deepStrictEqual(B.STYLE_KEYS, ['parlor', 'small-dread', 'round', 'cigar-box', 't-style']);
   B.STYLE_KEYS.forEach(k => {
     const p = B.styleParams(k);
     assert.strictEqual(p.style, k);
@@ -77,7 +77,7 @@ function build(name, p) {
     const m = txt.match(re);
     assert.ok(!m, `A: ${f} mentions "${m && m[0]}"`);
   });
-  console.log('Body A ok: 4 generic style presets, all under the bed, edits switch to Custom, no brand names');
+  console.log('Body A ok: 5 generic style presets, all under the bed, edits switch to Custom, no brand names');
 }
 
 // === Body B: outline =====================================================
@@ -105,6 +105,23 @@ function build(name, p) {
   const bx = B.shapeOf(B.styleParams('cigar-box'));
   approx(B.halfWidth(bx, bx.L / 2) * 2, 7 * IN, 1e-6, 'B: box width');
   approx(B.halfWidth(bx, bx.L * 0.2) * 2, 7 * IN, 1e-6, 'B: box sides straight');
+  // T-Style: single cutaway, slab outline, squared-off neck end
+  const tp = B.styleParams('t-style');
+  const ts = B.shapeOf(tp);
+  approx(ts.L, 12.5 * IN, 1e-9, 'B: T-Style length');
+  const tpts = B.outlinePoints(ts);
+  const txs = tpts.map(q => q[0]), tys = tpts.map(q => q[1]);
+  approx(Math.max(...txs) - Math.min(...txs), 10 * IN, 0.5, 'B: T-Style width');
+  approx(Math.max(...tys), ts.L, 1e-6, 'B: T-Style reaches the neck end');
+  approx(15.9 / 12.75, ts.L / (Math.max(...txs) - Math.min(...txs)), 0.02, 'B: T-Style keeps the published length:width proportion');
+  approx(B.halfWidth(ts, ts.c1, 'left'), B.halfWidth(ts, ts.c1, 'right'), 1e-6, 'B: T-Style lower bout symmetric');
+  const yCut = 0.8 * ts.L;
+  assert.ok(B.halfWidth(ts, yCut, 'right') < B.halfWidth(ts, yCut, 'left') - 15, 'B: T-Style cutaway on the treble (right, +x) side');
+  // flat neck end: both sides still have width just below the neck end
+  assert.ok(B.halfWidth(ts, ts.L - 0.5, 'right') > 25 && B.halfWidth(ts, ts.L - 0.5, 'left') > 25, 'B: T-Style neck end is squared off');
+  const lh = B.shapeOf(Object.assign(B.styleParams('t-style'), { leftHanded: true }));
+  approx(B.halfWidth(lh, yCut, 'left'), B.halfWidth(ts, yCut, 'right'), 1e-9, 'B: left-handed mirrors the cutaway');
+  assert.strictEqual(lh.cutawaySide, 'left');
   console.log('Body B ok: outline passes through the bout / waist widths; round is a circle; box is straight-sided');
 }
 
@@ -117,7 +134,10 @@ function build(name, p) {
     'cigar-box': B.styleParams('cigar-box'),
     wells: Object.assign(B.styleParams('parlor'), { neckScrewMode: 'wells' }),
     bolts2: Object.assign(B.styleParams('small-dread'), { neckBolts: 2, boltSize: '#6' }),
-    m3shallow: Object.assign(B.styleParams('round'), { boltSize: 'M3', depthIn: 2.5 })
+    m3shallow: Object.assign(B.styleParams('round'), { boltSize: 'M3', depthIn: 2.5 }),
+    't-style': B.styleParams('t-style'),
+    'tstyle-lefty-insert': Object.assign(B.styleParams('t-style'), { leftHanded: true, collarFastener: 'insert', neckBolts: 1 }),
+    'no-collar': Object.assign(B.styleParams('parlor'), { neckCollar: false, neckBolts: 1 })
   };
   Object.keys(cases).forEach(name => {
     const r = build(name, cases[name]);
@@ -126,17 +146,35 @@ function build(name, p) {
     assert.strictEqual(edgeErrors(R), 0, `C ${name}: right half not watertight`);
     const vl = signedVolume(L), vr = signedVolume(R);
     assert.ok(vl > 0 && vr > 0, `C ${name}: outward normals`);
-    approx(vl / vr, 1, 1e-4, `C ${name}: halves have equal volume (mirror images)`);
     const bl = bounds(L), br = bounds(R);
+    if (r.meta.symmetric) {
+      approx(vl / vr, 1, 1e-4, `C ${name}: halves have equal volume (mirror images)`);
+      approx(-bl[0], br[3], 1e-3, `C ${name}: mirror widths`);
+    } else {
+      // asymmetric outline: each half is its own shape, still on the bed
+      approx(-bl[0], r.meta.leftFootprintMm[0], 1e-3, `C ${name}: left width`);
+      approx(br[3], r.meta.rightFootprintMm[0], 1e-3, `C ${name}: right width`);
+      assert.ok(Math.abs(vl - vr) / vr > 0.02, `C ${name}: halves really differ`);
+      assert.ok(r.meta.leftFootprintMm[0] < r.meta.bedMm && r.meta.rightFootprintMm[0] < r.meta.bedMm, `C ${name}: both halves fit the bed`);
+    }
+    if (r.groups.collar) {
+      const C = r.groups.collar, bc = bounds(C);
+      assert.strictEqual(edgeErrors(C), 0, `C ${name}: neck collar not watertight`);
+      assert.ok(signedVolume(C) > 0, `C ${name}: collar outward normals`);
+      approx(bc[2], r.meta.pocketFloorZ, 1e-3, `C ${name}: collar's flat underside is at the pocket floor`);
+      approx(bc[5], r.meta.topSlot[0], 1e-3, `C ${name}: collar's top is under the top panel`);
+      assert.ok(bc[3] - bc[0] < r.meta.bedMm && bc[4] - bc[1] < r.meta.bedMm, `C ${name}: collar fits the bed`);
+    } else {
+      assert.ok(!r.meta.collar, `C ${name}: no collar part when it is off`);
+    }
     approx(bl[2], 0, 1e-6, `C ${name}: left half sits on z = 0`);
     approx(br[2], 0, 1e-6, `C ${name}: right half sits on z = 0`);
     approx(bl[3], 0, 1e-6, `C ${name}: left half ends at the split plane`);
     approx(br[0], 0, 1e-6, `C ${name}: right half starts at the split plane`);
-    approx(-bl[0], br[3], 1e-3, `C ${name}: mirror widths`);
     approx(bl[5], r.meta.depthMm, 1e-3, `C ${name}: full depth`);
     assert.ok(bl[4] - bl[1] < r.meta.bedMm, `C ${name}: fits the bed`);
   });
-  console.log('Body C ok: 7 configurations, both halves closed and consistently wound, mirror images, flat on the bed');
+  console.log('Body C ok:', Object.keys(cases).length, 'configurations, halves and neck collar closed and consistently wound, mirrored (or per-side for T-Style), flat on the bed');
 }
 
 // === Body D: panel tracks ================================================
@@ -200,7 +238,7 @@ function build(name, p) {
     c2.Execute(ClipperLib.ClipType.ctIntersection, out, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
     return out.reduce((a, q) => a + Math.abs(ClipperLib.Clipper.Area(q)), 0) / 1e6;
   }
-  ['parlor', 'small-dread', 'round', 'cigar-box'].forEach(name => {
+  ['parlor', 'small-dread', 'round', 'cigar-box', 't-style'].forEach(name => {
     const r = build(name, B.styleParams(name));
     const m = r.meta;
     const zT = (m.topSlot[0] + m.topSlot[1]) / 2, zB = (m.bottomSlot[0] + m.bottomSlot[1]) / 2;
@@ -214,15 +252,27 @@ function build(name, p) {
     // measured where the wall runs straight along y (widest point), so
     // the horizontal and the true (normal) track depth are the same
     const yMid = sh.kind === 'box' ? sh.L / 2 : sh.c1;
-    const innerHalf = B.halfWidth(sh, yMid) - p.wallMm;
     const toI = pp => pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }));
     const engage = p.grooveDepthMm - p.panelEdgeGapMm - 0.3;
     ['top', 'back'].forEach(which => {
       [-1, 1].forEach(side => {
+        const innerHalf = B.halfWidth(sh, yMid, side > 0 ? 'right' : 'left') - p.wallMm;
         const pt = { X: Math.round(side * (innerHalf + engage) * 1000), Y: Math.round(yMid * 1000) };
         assert.ok(m.panels[which].outline.some(pp => ClipperLib.Clipper.PointInPolygon(pt, toI(pp)) !== 0),
           `E ${name}: ${which} panel reaches ${engage.toFixed(1)} mm past the inside of the wall`);
       });
+    });
+  });
+  // the neck collar: set into one half sideways, then the other half
+  // closes over it, exactly like the panels (checked at mid height)
+  ['parlor', 't-style'].forEach(name => {
+    const r = build(name, B.styleParams(name));
+    const cl = r.slabs.collarLevels, zMid = (r.meta.collar.bottomZ + r.meta.collar.topZ) / 2;
+    let k = 0;
+    while (!(zMid * 1000 >= cl[k] && zMid * 1000 < cl[k + 1])) k++;
+    const outline = r.slabs.collar[k].map(pp => pp.map(q => [q.X / 1000, q.Y / 1000]));
+    ['left', 'right'].forEach(half => {
+      assert.ok(sweptArea(r, half, outline, zMid) < 0.01, `E ${name}: neck collar collides with the ${half} half while closing`);
     });
   });
   // the top panel has the pocket notch: no ply where the neck goes
@@ -232,7 +282,7 @@ function build(name, p) {
   const notchPt = { X: 0, Y: Math.round((m.lengthMm - 10) * 1000) };
   const inPanel = m.panels.top.outline.some(pp => ClipperLib.Clipper.PointInPolygon(notchPt, pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }))) !== 0);
   assert.ok(!inPanel, 'E: top panel is notched for the neck pocket');
-  console.log('Body E ok: both panels clear each half as it closes in sideways, reach into the tracks, top panel notched');
+  console.log('Body E ok: both panels and the neck collar clear each half as it closes in sideways, reach into the tracks, top panel notched');
 }
 
 // === Body F: neck pocket, block and screw holes ==========================
@@ -248,21 +298,26 @@ function build(name, p) {
   // inside the pocket: open above the floor, solid just below it
   assert.ok(!B.solidAt(r, 'left', -5, yc + 5, zF + 0.5), 'F: pocket open above the floor');
   assert.ok(B.solidAt(r, 'left', -5, yc + 5, zF - 0.5), 'F: pocket floor solid');
-  // pocket side walls: solid neck-block wall just outside the pocket width
-  assert.ok(B.solidAt(r, 'left', -(m.pocket.widthMm / 2 + 1), yc, zF + 5), 'F: pocket side wall');
-  assert.ok(B.solidAt(r, 'left', -(m.pocket.widthMm / 2 + p.neckBlockSideMm - 1), yc, zF + 5), 'F: side wall is a full block thick');
-  // pocket end wall
-  assert.ok(B.solidAt(r, 'left', -5, L - m.pocket.lengthMm - 1, zF + 5), 'F: pocket end wall');
+  // pocket side walls (in the neck collar by default): solid wall just
+  // outside the pocket width, a full block thick, and the end wall
+  const wy = yc + 8; // clear of the collar bolts
+  assert.ok(B.solidAt(r, 'collar', -(m.pocket.widthMm / 2 + 1), wy, zF + 5), 'F: pocket side wall');
+  assert.ok(B.solidAt(r, 'collar', -(m.pocket.widthMm / 2 + p.neckBlockSideMm - 1), wy, zF + 5), 'F: side wall is a full block thick');
+  assert.ok(B.solidAt(r, 'collar', -2, L - m.pocket.lengthMm - 1, zF + 5), 'F: pocket end wall');
+  // without the collar the same walls are part of the halves
+  const nc = build('no-collar', Object.assign(B.styleParams('parlor'), { neckCollar: false, neckBolts: 1 }));
+  assert.ok(B.solidAt(nc, 'left', -(m.pocket.widthMm / 2 + 1), wy, zF + 5), 'F: no collar: side wall in the half');
+  assert.ok(B.solidAt(nc, 'left', -5, L - m.pocket.lengthMm - 1, zF + 5), 'F: no collar: end wall in the half');
   // the clamping column: solid all the way from the pocket floor down to
   // the back face (z = 0) beside each screw, except the bolt hole
-  const boltY = m.bolts[0].yMm;
+  const boltY = yc;
   for (let z = 0.2; z < zF; z += 0.5) {
     m.neckScrews.forEach(s => {
       if (s.x > 0) return;
       assert.ok(!B.solidAt(r, 'left', s.x, s.y, z), `F: screw hole open at z=${z.toFixed(1)}`);
       assert.ok(B.solidAt(r, 'left', s.x - p.neckScrewHoleMm / 2 - 1, s.y, z), `F: solid beside the screw at z=${z.toFixed(1)}`);
     });
-    if (Math.abs(z - m.bolts[0].zMm) > 8) assert.ok(B.solidAt(r, 'left', -5, boltY, z), `F: solid under the pocket at z=${z.toFixed(1)}`);
+    assert.ok(B.solidAt(r, 'left', -5, boltY, z), `F: solid under the pocket at z=${z.toFixed(1)}`);
   }
   approx(m.plasticUnderPocketMm, zF, 1e-9, 'F: plate mode clamps the whole block');
   assert.ok(m.plasticUnderPocketMm > 40, 'F: >40 mm of block under the pocket');
@@ -283,8 +338,10 @@ function build(name, p) {
 
 // === Body G: clamshell bolts through the neck and tail blocks ============
 {
-  const p = B.styleParams('parlor');
-  const r = build('parlor', p);
+  // collar on by default: only the tail bolt runs sideways
+  assert.deepStrictEqual(build('parlor', B.styleParams('parlor')).meta.bolts.map(b => b.name), ['tail']);
+  const p = Object.assign(B.styleParams('parlor'), { neckBolts: 1 });
+  const r = build('parlor-neckbolt', p);
   const m = r.meta;
   assert.deepStrictEqual(m.bolts.map(b => b.name), ['neck', 'tail']);
   const bolt = B.BOLTS[p.boltSize];
@@ -353,19 +410,93 @@ function build(name, p) {
   let seed = 11;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   const pick = (a) => a[Math.floor(rnd() * a.length)];
-  const N = 6;
+  const N = 8;
   for (let n = 0; n < N; n++) {
     const p = B.styleParams(pick(B.STYLE_KEYS));
     Object.assign(p, {
       lengthIn: Math.min(12.85, p.lengthIn * (0.85 + rnd() * 0.2)), depthIn: 2.4 + rnd() * 1.5,
       wallMm: 5 + rnd() * 3, grooveDepthMm: 1.5 + rnd() * 2, panelThicknessMm: pick([3.175, 3, 4]),
       topLipMm: 4 + rnd() * 2, neckScrewMode: pick(['plate', 'wells']), boltSize: pick(['M3', 'M4', '#6']),
-      neckBolts: pick([1, 2]), pocketWidthIn: pick([1.375, 1.5, 1.625])
+      neckBolts: pick([0, 1, 2]), pocketWidthIn: pick([1.375, 1.5, 1.625]),
+      neckCollar: rnd() < 0.7, collarFastener: pick(['nut', 'insert']), leftHanded: rnd() < 0.3
     });
     const r = B.build(p);
     assert.strictEqual(edgeErrors(r.groups.left) + edgeErrors(r.groups.right), 0, `J ${n}: watertight ${JSON.stringify(p)}`);
+    if (r.groups.collar) assert.strictEqual(edgeErrors(r.groups.collar), 0, `J ${n}: collar watertight ${JSON.stringify(p)}`);
+    assert.ok(r.meta.overhang.widestLedgeMm <= 1.0, `J ${n}: overhang ${r.meta.overhang.widestLedgeMm}`);
   }
   console.log('Body J ok:', N, 'random bodies watertight');
+}
+
+// === Body K: split neck block (neck collar bolted on vertically) ========
+{
+  ['parlor', 't-style', 'cigar-box'].forEach(name => {
+    const p = B.styleParams(name);
+    const r = build(name, p);
+    const m = r.meta, c = m.collar, bolt = B.BOLTS[p.boltSize];
+    const zF = m.pocketFloorZ, L = m.lengthMm, pw = m.pocket.widthMm / 2;
+    assert.ok(c, `K ${name}: collar on by default`);
+    approx(c.bottomZ, zF, 1e-9, `K ${name}: split at the pocket floor`);
+    approx(c.topZ, m.topSlot[0], 1e-9, `K ${name}: collar top carries the top panel`);
+    assert.strictEqual(m.bolts.filter(b => /neck/.test(b.name)).length, 0, `K ${name}: no long sideways neck bolt`);
+    // the halves stop at the pocket floor inside the neck block...
+    assert.ok(!B.solidAt(r, 'left', -(pw + 5), L - 30, zF + 1), `K ${name}: half open above the split`);
+    assert.ok(B.solidAt(r, 'left', -(pw + 5), L - 30, zF - 1) || c.bolts.some(b => Math.hypot(b.x + pw + 5, b.y - L + 30) < 6), `K ${name}: half solid below the split`);
+    // ...and the collar bridges the left/right split
+    assert.ok(B.solidAt(r, 'collar', -2, L - m.pocket.lengthMm - 3, zF + 3) && B.solidAt(r, 'collar', 2, L - m.pocket.lengthMm - 3, zF + 3), `K ${name}: collar spans x = 0`);
+    // the neck heel bears only on the halves' solid lower block: nothing
+    // of the collar inside the pocket, and solid under the whole floor
+    for (let y = L - m.pocket.lengthMm + 2; y < L - 2; y += 6) {
+      for (let x = -pw + 1; x < pw - 1; x += 4) {
+        assert.ok(!B.solidAt(r, 'collar', x, y, zF + 1), `K ${name}: collar clear of the pocket at ${x.toFixed(0)},${y.toFixed(0)}`);
+        const nearScrew = m.neckScrews.some(s => Math.hypot(s.x - x, s.y - y) < p.neckScrewHoleMm / 2 + 0.2);
+        if (!nearScrew) assert.ok(B.solidAt(r, x < 0 ? 'left' : 'right', x, y, zF - 0.5), `K ${name}: pocket floor solid at ${x.toFixed(0)},${y.toFixed(0)}`);
+      }
+    }
+    // at least one collar bolt into each half; each half's hole runs from
+    // the back face (or a counterbored well) straight up to the split
+    ['left', 'right'].forEach(side => assert.ok(c.bolts.some(b => b.side === side), `K ${name}: a collar bolt into the ${side} half`));
+    assert.strictEqual(c.bolts.length, 4, `K ${name}: 4 collar bolts`);
+    c.bolts.forEach(b => {
+      const half = b.side;
+      for (let z = 0.2; z < zF; z += 0.5) assert.ok(!B.solidAt(r, half, b.x, b.y, z), `K ${name}: collar bolt hole open at z=${z.toFixed(1)}`);
+      assert.ok(B.solidAt(r, half, b.x + c.holeMm / 2 + 0.3, b.y, zF - 1), `K ${name}: snug hole (${c.holeMm} mm) in the half`);
+      if (c.wells) {
+        assert.ok(!B.solidAt(r, half, b.x + bolt.washerMm / 2 + 0.5, b.y, c.seatZ - 0.5), `K ${name}: washer well`);
+        assert.ok(c.seatZ >= 5, `K ${name}: well deep enough to sink the head`);
+      }
+      // nut trap: plastic floor under the nut (the bolt pulls the nut
+      // down onto it: compression), hex pocket open to the top
+      assert.ok(!B.solidAt(r, 'collar', b.x, b.y, zF + 1), `K ${name}: bolt hole in the collar`);
+      assert.ok(B.solidAt(r, 'collar', b.x + c.holeMm / 2 + 0.4, b.y, zF + 1), `K ${name}: nut floor solid`);
+      assert.ok(!B.solidAt(r, 'collar', b.x + c.holeMm / 2 + 0.6, b.y, c.topZ - 0.5), `K ${name}: nut trap open at the top`);
+      // clear of the neck screws
+      m.neckScrews.forEach(s => assert.ok(Math.hypot(s.x - b.x, s.y - b.y) > 12, `K ${name}: collar bolt clear of the neck screws`));
+    });
+    assert.ok(c.boltLengthMm >= c.boltMinMm && c.boltLengthMm <= c.boltMaxMm && !c.boltNote, `K ${name}: stock bolt length ${c.boltLengthMm}`);
+    // a gap all round between the collar and the rim's inside wall
+    const sh = B.shapeOf(p);
+    const yw = L - m.pocket.lengthMm - 3;
+    const edgeR = B.halfWidth(sh, yw, 'right') - p.wallMm;
+    if (edgeR < m.neckBlock.widthMm / 2) assert.ok(!B.solidAt(r, 'collar', edgeR - p.collarClearanceMm / 2, yw, zF + 3), `K ${name}: collar clears the wall`);
+    assert.deepStrictEqual(r.warnings, [], `K ${name}: no warnings`);
+  });
+  // heat-set insert version: blind hole from the underside with a 45deg
+  // pointed roof (no bridging), insert-sized
+  const ri = B.build(Object.assign(B.styleParams('parlor'), { collarFastener: 'insert' }));
+  const ci = ri.meta.collar, bi = ci.bolts[0], bolt = B.BOLTS.M4;
+  assert.ok(!B.solidAt(ri, 'collar', bi.x + bolt.insertHoleMm / 2 - 0.2, bi.y, ci.bottomZ + 2), 'K insert: insert hole');
+  assert.ok(B.solidAt(ri, 'collar', bi.x, bi.y, ci.topZ - 0.5), 'K insert: blind (closed at the top)');
+  assert.ok(ri.meta.overhang.widestLedgeMm <= 1.0, 'K insert: pointed roof prints without support');
+  assert.ok(ci.boltLengthMm <= ci.boltMaxMm, 'K insert: bolt does not bottom out');
+  // collar + 2 neck bolts: one is dropped with a warning (they would cross)
+  const r2 = B.build(Object.assign(B.styleParams('parlor'), { neckBolts: 2 }));
+  assert.ok(r2.warnings.some(w => /only one sideways neck bolt/.test(w)) && r2.meta.bolts.length === 2, 'K: rear neck bolt dropped with the collar');
+  // neither collar nor neck bolt: warn
+  const r0 = B.build(Object.assign(B.styleParams('parlor'), { neckCollar: false, neckBolts: 0 }));
+  assert.ok(r0.warnings.some(w => /No neck collar and no neck bolt/.test(w)), 'K: warns with nothing tying the neck end');
+  console.log('Body K ok: neck block split at the pocket floor; U-shaped collar bridges the halves with 4 vertical',
+    build('parlor').meta.boltSize, 'bolts (' + build('parlor').meta.collar.boltLengthMm + ' mm), nut traps / heat-set inserts, pocket floor all solid lower block');
 }
 
 console.log('\nALL BODY TESTS PASSED');
