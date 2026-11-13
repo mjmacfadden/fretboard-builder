@@ -133,12 +133,12 @@
       label: 'Cigar-box style',
       values: { shape: 'box', lengthIn: 12.0, widthIn: 7.0, cornerRadiusIn: 0.5, depthIn: 3.0 }
     },
-    // Single-cutaway slab body. Published full-size outlines of this
-    // style are about 15.9" x 12.75"; scaled by 12.5 / 15.9 that is
-    // 12.5" x 10.0", which leaves ~10 mm spare on a 12.9" bed.
+    // Single-cutaway slab body traced from t-style-body-outline.svg and
+    // scaled uniformly to 12.9" long (10.52" wide). 12.9" is the whole
+    // bed, so the bed warning stays on: print diagonally, or see README.
     't-style': {
       label: 'T-Style',
-      values: { shape: 'tstyle', lengthIn: 12.5, widthIn: 10.0, depthIn: 1.85 }
+      values: { shape: 'tstyle', lengthIn: 12.9, widthIn: 10.52, depthIn: 1.85 }
     }
   };
   var STYLE_KEYS = ['parlor', 'small-dread', 'round', 'cigar-box', 't-style'];
@@ -180,27 +180,7 @@
   // ------------------------------------------------------------------
   function shapeOf(p) {
     var L = p.lengthIn * IN;
-    if (p.shape === 'tstyle') {
-      // Proportions (fractions of length L from the tail, and of width W)
-      // read off published outlines of the single-cutaway slab style.
-      var W = p.widthIn * IN;
-      // treble-side neck-end edge: the pocket plus a 1/2" printed wall
-      var pocketHalf = (p.pocketWidthIn !== undefined ? p.pocketWidthIn : DEFAULTS.pocketWidthIn) * IN / 2 +
-        (p.pocketFitMm !== undefined ? p.pocketFitMm : DEFAULTS.pocketFitMm);
-      // keep at least the panel channel's reach of top panel beside the pocket
-      var wallT = p.wallMm !== undefined ? p.wallMm : DEFAULTS.wallMm;
-      var chan = p.channelDepthMm !== undefined ? p.channelDepthMm : DEFAULTS.channelDepthMm;
-      var b = Math.min(pocketHalf + wallT + Math.max(6.7, chan), 0.45 * W - 5);
-      var a = Math.max(b, 0.2 * W);                 // bass-side end of the flat neck edge
-      var c1 = 0.29 * L;                             // lower bout widest point
-      var cut0 = 0.70 * L;                           // where the cutaway starts
-      var corner0 = 0.87 * L;                        // bass horn widest point / corner start
-      var treble = { pts: [[c1, 0.5 * W], [0.60 * L, 0.44 * W], [cut0, 0.45 * W]], end: 'cutaway', endX: b };
-      var bass = { pts: [[c1, 0.5 * W], [0.60 * L, 0.435 * W], [corner0, 0.45 * W]], end: 'corner', endX: a };
-      return { kind: 'tstyle', L: L, W: W, c1: c1, a: a, b: b,
-        right: p.leftHanded ? bass : treble, left: p.leftHanded ? treble : bass,
-        cutawaySide: p.leftHanded ? 'left' : 'right' };
-    }
+    if (p.shape === 'tstyle') return tstyleShape(p, L);
     if (p.shape === 'box') {
       var hwb = p.widthIn * IN / 2;
       var r = Math.max(0.5, Math.min(p.cornerRadiusIn * IN, hwb - 0.5, L / 2 - 0.5));
@@ -220,7 +200,7 @@
   // 'right' (+x, default) or 'left' (-x) side.
   function halfWidth(sh, y, side) {
     var L = sh.L;
-    if (sh.kind === 'tstyle') return tstyleSide(sh, y, side === 'left' ? sh.left : sh.right);
+    if (sh.kind === 'tstyle') return polyHalfWidth(sh.poly, y, side === 'left' ? 'left' : 'right');
     if (y <= 0 || y >= L) return 0;
     if (sh.kind === 'box') {
       var r = sh.r, d = 0;
@@ -245,55 +225,155 @@
     return sh.hw + (sh.h2 - sh.hw) * (1 - Math.cos(Math.PI * t2)) / 2;
   }
 
-  var TAIL_N = 2.6, CORNER_N = 2.2;
-  function blend(pts, y) { // zero-slope cosine blends between control points
-    for (var i = 0; i + 1 < pts.length; i++) {
-      var p0 = pts[i], p1 = pts[i + 1];
-      if (y <= p1[0]) {
-        var t = p1[0] > p0[0] ? (y - p0[0]) / (p1[0] - p0[0]) : 1;
-        return p0[1] + (p1[1] - p0[1]) * (1 - Math.cos(Math.PI * clamp(t, 0, 1))) / 2;
+  // ------------------------------------------------------------------
+  // T-Style: outline traced from a drawing of the single-cutaway slab
+  // body (t-style-body-outline.svg, path cls-1), neck end on the right.
+  // TSTYLE_POCKET is the drawing's neck pocket marker (cls-2): its right
+  // end is the neck end and its centre line is the body's centre line.
+  // ------------------------------------------------------------------
+  var TSTYLE_PATH = 'M814.57,506.07c-13.33,15.22-34.93,69.28,38.53,115.61,42.39,26.73,97.73,24.06,97.73,72.12,0,37.82-48.46,60.81-106.19,60.81-114.58-7.26-153.26-57.69-213.83-60.07-45.27-1.78-114.72,28.21-174.6,60.73-110.3,50.85-190.81,55.59-253.99,43.02-20.92-4.16-49.38-20.42-75.46-40.38-61.61-47.13-81.46-168.17-87.85-241.27-.02-.15-.03-.3-.04-.45v-177.63c.05-.63.11-1.27.16-1.92,5.2-60.3,18.96-150.47,55.37-205.37,57.51-79.17,160.36-122.54,361.81-29.68,59.88,32.52,129.33,62.51,174.6,60.73,60.57-2.38,99.25-52.82,213.83-60.07,139.08-2.37,114.68,120.45,75.54,178.14-45.65,67.29,44.49,77.21,44.49,91.04v108h-17.26l-5.22.1s-31.97-.1-64.14-.1-53.78,15.56-63.48,26.64Z';
+  var TSTYLE_POCKET = { x0: 748.67, x1: 964.67, y0: 371.43, y1: 479.43 };
+
+  // SVG path (M/L/H/V/C/S/Z, absolute or relative) -> points, curves
+  // flattened to n segments each
+  function flattenPath(d, n) {
+    var tok = d.match(/[MmLlHhVvCcSsZz]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/g), i = 0, cmd = null;
+    var cx = 0, cy = 0, sx = 0, sy = 0, lc = null, pts = [];
+    function num() { return parseFloat(tok[i++]); }
+    while (i < tok.length) {
+      if (/[A-Za-z]/.test(tok[i])) cmd = tok[i++];
+      var rel = cmd === cmd.toLowerCase(), C = cmd.toUpperCase();
+      var ox = rel ? cx : 0, oy = rel ? cy : 0;
+      if (C === 'M') { cx = num() + ox; cy = num() + oy; sx = cx; sy = cy; pts.push([cx, cy]); cmd = rel ? 'l' : 'L'; lc = null; }
+      else if (C === 'Z') { cx = sx; cy = sy; lc = null; }
+      else if (C === 'L') { cx = num() + ox; cy = num() + oy; pts.push([cx, cy]); lc = null; }
+      else if (C === 'H') { cx = num() + ox; pts.push([cx, cy]); lc = null; }
+      else if (C === 'V') { cy = num() + oy; pts.push([cx, cy]); lc = null; }
+      else {
+        var c1;
+        if (C === 'C') c1 = [num() + ox, num() + oy];
+        else c1 = lc ? [2 * cx - lc[0], 2 * cy - lc[1]] : [cx, cy];
+        var c2 = [num() + ox, num() + oy], e = [num() + ox, num() + oy];
+        for (var k = 1; k <= n; k++) {
+          var t = k / n, u = 1 - t;
+          pts.push([u * u * u * cx + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * e[0],
+                    u * u * u * cy + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * e[1]]);
+        }
+        lc = c2; cx = e[0]; cy = e[1];
       }
     }
-    return pts[pts.length - 1][1];
+    var a = pts[0], b = pts[pts.length - 1];
+    if (Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6) pts.pop();
+    return pts;
   }
-  function tstyleSide(sh, y, side) {
-    var L = sh.L;
-    if (y <= 0) return 0;
-    if (y >= L) return side.endX;                    // flat (squared-off) neck end
-    if (y <= sh.c1) {                                 // flat-ish tail with rounded corners
-      var u = (sh.c1 - y) / sh.c1;
-      return sh.W / 2 * Math.pow(1 - Math.pow(u, TAIL_N), 1 / TAIL_N);
+  var tstyleRaw = null;
+  function tstyleDrawing() {
+    if (tstyleRaw) return tstyleRaw;
+    var pts = flattenPath(TSTYLE_PATH, 16), x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    pts.forEach(function (q) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); });
+    tstyleRaw = { pts: pts, x0: x0, x1: x1, y0: y0, y1: y1 };
+    return tstyleRaw;
+  }
+  // natural width / length of the drawing, and the pocket marker's size
+  // in units of the body length
+  function tstyleProportions() {
+    var r = tstyleDrawing(), len = r.x1 - r.x0, P = TSTYLE_POCKET;
+    return { widthPerLength: (r.y1 - r.y0) / len, pocketLength: (P.x1 - P.x0) / len, pocketWidth: (P.y1 - P.y0) / len,
+      pocketEndGap: (r.x1 - P.x1) / len };
+  }
+  function convexHull(pts) {
+    var a = pts.slice().sort(function (p, q) { return p[0] - q[0] || p[1] - q[1]; });
+    function cr(o, p, q) { return (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]); }
+    var lo = [], hi = [];
+    a.forEach(function (p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); });
+    for (var i = a.length - 1; i >= 0; i--) { var p = a[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], p) <= 0) hi.pop(); hi.push(p); }
+    lo.pop(); hi.pop();
+    return lo.concat(hi);
+  }
+  function tstyleShape(p, L) {
+    var r = tstyleDrawing(), P = TSTYLE_POCKET;
+    var sy = L / (r.x1 - r.x0);                                   // uniform scale from the length
+    var natW = (r.y1 - r.y0) * sy;
+    var W = p.widthIn ? p.widthIn * IN : natW;
+    var sx = Math.abs(W - natW) < 0.15 ? sy : W / (r.y1 - r.y0);  // optional width stretch
+    var yc = (P.y0 + P.y1) / 2, mir = p.leftHanded ? -1 : 1;
+    // builder axes: y = along the body from the tail, x = across, +x = treble
+    // (the drawing's +y, below the pocket, is the cutaway side)
+    var raw = r.pts.map(function (q) { return [mir * (q[1] - yc) * sx, (q[0] - r.x0) * sy]; });
+    // Close the neck end. The drawing's neck end is the 1.5"-wide tongue the
+    // neck sits on (the pocket marker's end); a printed rim needs a wall
+    // round the pocket, so:
+    //  - bass side: a straight edge from the bass horn to the neck end
+    //    (convex hull of the outline near the neck end, bass side only),
+    //  - treble side: a wall beside the pocket, straight along it, as wide
+    //    as the old preset kept (pocket + wall + channel reach); the
+    //    cutaway curve itself is unchanged outside it.
+    var pocketHalf = (p.pocketWidthIn !== undefined ? p.pocketWidthIn : DEFAULTS.pocketWidthIn) * IN / 2 +
+      (p.pocketFitMm !== undefined ? p.pocketFitMm : DEFAULTS.pocketFitMm);
+    var pl = (p.pocketLengthIn !== undefined ? p.pocketLengthIn : DEFAULTS.pocketLengthIn) * IN;
+    var wallT = p.wallMm !== undefined ? p.wallMm : DEFAULTS.wallMm;
+    var chan = p.channelDepthMm !== undefined ? p.channelDepthMm : DEFAULTS.channelDepthMm;
+    var side = pocketHalf + wallT + Math.max(6.7, chan);
+    var bassS = -mir;                                              // sign of x on the bass side
+    var near = raw.filter(function (q) { return q[1] >= L - 0.2 * L && q[0] * bassS >= -side; });
+    near.push([0, L], [-bassS * side, L], [0, L - 0.2 * L]);
+    var hull = convexHull(near.map(function (q) { return [q[0] * bassS < 0 ? -bassS * Math.min(side, Math.abs(q[0])) : q[0], q[1]]; }));
+    var wallRect = [[-side, L - pl - side], [side, L - pl - side], [side, L], [-side, L]];
+    var poly = tstyleUnion([raw, hull, wallRect]);
+    // c1: where the lower bout is widest (the sides run straight there)
+    var c1 = 0, wBest = 0;
+    for (var yy = 0.1 * L; yy < 0.6 * L; yy += 0.5) {
+      var ww = polyHalfWidth(poly, yy, 'left') + polyHalfWidth(poly, yy, 'right');
+      if (ww > wBest) { wBest = ww; c1 = yy; }
     }
-    var last = side.pts[side.pts.length - 1];
-    if (y <= last[0]) return blend(side.pts, y);
-    var t = (y - last[0]) / (L - last[0]);
-    if (side.end === 'corner') {                      // rounded corner into the flat end
-      return side.endX + (last[1] - side.endX) * Math.pow(1 - Math.pow(t, CORNER_N), 1 / CORNER_N);
+    return { kind: 'tstyle', L: L, W: W, poly: poly, c1: c1, side: side, raw: raw, scale: [sx, sy],
+      cutawaySide: p.leftHanded ? 'left' : 'right' };
+  }
+  function tstyleUnion(paths) {
+    var c = new ClipperLib.Clipper(), sol = new ClipperLib.Paths();
+    paths.forEach(function (pp) {
+      var ar = pp.map(function (q) { return { X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }; });
+      if (ClipperLib.Clipper.Area(ar) < 0) ar.reverse();
+      c.AddPath(ar, ClipperLib.PolyType.ptSubject, true);
+    });
+    c.Execute(ClipperLib.ClipType.ctUnion, sol, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+    var best = sol[0];
+    sol.forEach(function (q) { if (Math.abs(ClipperLib.Clipper.Area(q)) > Math.abs(ClipperLib.Clipper.Area(best))) best = q; });
+    ClipperLib.Clipper.CleanPolygon(best, 20);
+    if (ClipperLib.Clipper.Area(best) < 0) best.reverse();
+    return best.map(function (q) { return [q.X / 1000, q.Y / 1000]; });
+  }
+  // first outline crossing met going out from |x| = x0 along the line y
+  // (for a T-Style horn that is the cutaway, not the horn beyond it)
+  function nearEdge(sh, y, side, x0) {
+    if (sh.kind !== 'tstyle') return halfWidth(sh, y, side);
+    var best = Infinity, poly = sh.poly, n = poly.length;
+    for (var i = 0; i < n; i++) {
+      var a = poly[i], b = poly[(i + 1) % n];
+      if ((a[1] - y) * (b[1] - y) > 0 || a[1] === b[1]) continue;
+      var x = a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
+      x = side === 'left' ? -x : x;
+      if (x > x0) best = Math.min(best, x);
     }
-    // cutaway: rounds over the shoulder, then sweeps in (concave) to run
-    // along the neck pocket's wall
-    var tt = t, sm = tt * tt * (3 - 2 * tt);           // ~18 mm shoulder radius on the presets
-    return side.endX + (last[1] - side.endX) * (1 - sm);
+    return best === Infinity ? 0 : best;
+  }
+  // furthest extent of a polygon on one side of x = 0 along the line y
+  function polyHalfWidth(poly, y, side) {
+    var best = 0, n = poly.length;
+    for (var i = 0; i < n; i++) {
+      var a = poly[i], b = poly[(i + 1) % n];
+      if ((a[1] - y) * (b[1] - y) > 0 || a[1] === b[1]) continue;
+      var x = a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
+      best = Math.max(best, side === 'left' ? -x : x);
+    }
+    return best;
   }
 
   // Closed outline, counter-clockwise, in mm: [[x, y], ...]
   function outlinePoints(sh) {
     var L = sh.L, ys = [], i;
     if (sh.kind === 'tstyle') {
-      var N = 40;
-      for (i = 0; i <= N; i++) ys.push(sh.c1 * Math.pow(i / N, 2.5));
-      var yEnd = Math.min(sh.right.pts[2][0], sh.left.pts[2][0]);
-      var m = Math.ceil((yEnd - sh.c1) / 4);
-      for (i = 1; i < m; i++) ys.push(sh.c1 + (yEnd - sh.c1) * i / m);
-      [sh.right, sh.left].forEach(function (side) {
-        var y0 = side.pts[2][0], n2 = 48;
-        for (var j = 0; j <= n2; j++) ys.push(y0 + (L - y0) * (side.end === 'corner' ? 1 - Math.pow(1 - j / n2, 2.5) : j / n2));
-      });
-      ys = dedupe(ys);
-      var pts = [[0, 0]];
-      ys.forEach(function (y) { if (y > 0) pts.push([halfWidth(sh, y, 'right'), y]); });
-      for (i = ys.length - 1; i >= 0; i--) if (ys[i] > 0) pts.push([-halfWidth(sh, ys[i], 'left'), ys[i]]);
-      return pts;
+      return sh.poly.slice();
     }
     if (sh.kind === 'box') {
       var n = 12;
@@ -417,6 +497,15 @@
       }
       return pts;
     }).filter(function (p) { return p.length >= 3 && ClipperLib.Clipper.Area(p) !== 0; });
+  }
+  function leftHPFn() { return rect(-BIG / S, -BIG / S, 0, BIG / S); }
+  function rightHPFn() { return rect(0, -BIG / S, BIG / S, BIG / S); }
+  // region swept by paths moving along x (dir +1 or -1) to infinity
+  function sweepX(paths, dir) {
+    var seg = [{ X: 0, Y: 0 }, { X: dir * BIG, Y: 0 }, { X: dir * BIG, Y: 1 }, { X: 0, Y: 1 }];
+    var all = [];
+    paths.forEach(function (pp) { all = all.concat(ClipperLib.Clipper.MinkowskiSum(seg, pp, true)); all.push(pp); });
+    return union(all);
   }
   function areaMm2(paths) {
     var a = 0;
@@ -705,6 +794,27 @@
     }).filter(function (b) { return b.half > 0.05; });
   }
 
+  var BED_MARGIN = 2;
+  // one half's footprint (side 1 = +x, -1 = -x) as a point list
+  function halfPoly(outline, sg) {
+    var pts = outline.filter(function (q) { return q[0] * sg >= 0; });
+    pts.push([0, 0]);
+    outline.forEach(function (q) { pts.push([0, q[1]]); });
+    return pts;
+  }
+  // side of the smallest square holding the points at the best rotation
+  function squareFit(pts) {
+    var best = Infinity;
+    for (var a = 0; a < 90; a += 0.25) {
+      var c = Math.cos(a * Math.PI / 180), s = Math.sin(a * Math.PI / 180);
+      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      pts.forEach(function (q) { var u = q[0] * c - q[1] * s, v = q[0] * s + q[1] * c;
+        x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v); });
+      best = Math.min(best, Math.max(x1 - x0, y1 - y0));
+    }
+    return best;
+  }
+
   // ------------------------------------------------------------------
   // Build everything
   // ------------------------------------------------------------------
@@ -796,6 +906,29 @@
     var webH = rSpot + 3;
     var web0 = -50, web1 = Math.min(tbl, tailY + webH);
     var SY = [tbl, L - bl, L - pl, web0, web1];
+    // ---- cutaway cap. The halves close sideways over the panels, so
+    // nothing of a half may lie, at the top panel's level, on the far side
+    // of a piece of that panel (it would have to pass through the ply).
+    // A horn that curls back towards the neck (the T-Style's cutaway)
+    // breaks that: the cutaway's walls sit between the neck and the horn's
+    // part of the top panel. Those walls, from the top panel's seat up,
+    // become a separate cap with their top lip, lowered on from above once
+    // the body is closed and glued down onto the half's flat seat. Its
+    // footprint is the rim ring inside an axis-aligned box (straight cuts
+    // that presplit can share with every slab, so the parts stay closed).
+    var capBox = null;
+    (function () {
+      var O0 = [toPath(outline)], I0 = offset(O0, -p.wallMm);
+      var tp0 = diff(offset(I0, -p.panelEdgeGapMm), rect(-pw2, L - pl, pw2, L + 50));
+      [['left', 1, leftHPFn()], ['right', -1, rightHPFn()]].forEach(function (h) {
+        var hit = inter(inter(diff(O0, I0), sweepX(offset(tp0, 0.3), h[1])), h[2]);
+        if (areaMm2(hit) <= 0.5) return;
+        var hb = bbox(hit), reach = cD + 1.5;
+        var xo = h[0] === 'right' ? Math.ceil(hb[2] + reach) : Math.floor(hb[0] - reach);
+        capBox = { side: h[0], x: xo, y: Math.floor(hb[1] - reach), hit: hit };
+      });
+    })();
+    if (capBox) { SX.push(Math.round(capBox.x * S)); SY.push(capBox.y); }
     boltYs.forEach(function (b) {
       b.hole.concat(b.spot).forEach(function (band) { SY.push(b.y - band.half, b.y + band.half); });
     });
@@ -925,12 +1058,16 @@
         // cutaway narrows the treble wall near the neck end), keeping
         // clear of a sideways neck bolt
         var best = null;
-        for (var fy = 0.3; fy <= 0.85 + 1e-9 && !best; fy += 0.05) {
+        var fyMax = Math.max(0.85, (bl - needR - clr - 1) / pl);
+        for (var fy = 0.3; fy <= fyMax + 1e-9 && !best; fy += 0.05) {
           var y = L - fy * pl;
           if (p.neckBolts >= 1 && Math.abs(y - (L - pl / 2)) < rSpotN + needR + 1.5) continue;
           var edge = kw;
-          for (var s3 = -1; s3 <= 1.0001; s3 += 0.1) edge = Math.min(edge, halfWidth(sh, y + s3 * needR, side) - p.wallMm - p.collarClearanceMm);
+          for (var s3 = -1; s3 <= 1.0001; s3 += 0.1) edge = Math.min(edge, nearEdge(sh, y + s3 * needR, side, pw2) - p.wallMm - p.collarClearanceMm);
           var x = sg * (pw2 + edge) / 2;
+          // keep its counterbore well clear of the neck screws' holes/wells
+          var rScr = p.neckScrewMode === 'wells' ? rw : rs, rBw = bolt.washerMm / 2 + 1;
+          if (screws.some(function (q) { return Math.hypot(q[0] - x, q[1] - y) < rScr + rBw + 2; })) continue;
           if (inside(inner, x, y)) best = { x: x, y: y };
         }
         cands.push({ side: side, where: 'beside the pocket', x: best ? best.x : sg * (pw2 + kw) / 2, y: best ? best.y : L - 0.3 * pl });
@@ -1049,8 +1186,35 @@
       solid.push(diff(O, union(voids)));
     }
 
+    var topPanel0 = diff(offset(I, -ec), pocket);
+    var capFoot = [], capSide = null, capRegions = null, capLevels = null, cap = null, capInfo = null;
+    if (capBox) {
+      capSide = capBox.side;
+      var ring = diff(O, shrink(I, 'I', cD));
+      capFoot = inter(ring, capSide === 'right' ? rect(0, capBox.y, capBox.x, L + 50) : rect(capBox.x, capBox.y, 0, L + 50));
+      // only the piece(s) carrying the walls in the way (the box can clip
+      // a corner of some other part of the ring)
+      capFoot = capFoot.filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0 && areaMm2(inter([pp], capBox.hit)) > 0.01; });
+    }
+    if (capFoot.length) {
+      var zc0 = Math.round(zTS0 * S);
+      capLevels = []; capRegions = [];
+      for (k = 0; k + 1 < levels.length; k++) {
+        if (levels[k] < zc0) continue;
+        if (!capLevels.length) capLevels.push(levels[k]);
+        capLevels.push(levels[k + 1]);
+        capRegions.push(cleanSpikes(inter(solid[k], capFoot)));
+        solid[k] = diff(solid[k], capFoot);
+      }
+      // print it upside down (its top face on the bed): flip z
+      cap = meshSlabs(capLevels, capRegions);
+      var cbx = bbox(capFoot);
+      capInfo = { side: capSide, bottomZ: zTS0, topZ: D, heightMm: D - zTS0, footprintMm: [cbx[2] - cbx[0], cbx[3] - cbx[1]],
+        sizeXYMm: cbx, areaMm2: areaMm2(capFoot), seatAreaMm2: areaMm2(capRegions[0]), wallSeatMm: p.wallMm, lipOnPanelMm: cD };
+    }
+
     // ---- halves
-    var leftHP = rect(-BIG / S, -BIG / S, 0, BIG / S), rightHP = rect(0, -BIG / S, BIG / S, BIG / S);
+    var leftHP = leftHPFn(), rightHP = rightHPFn();
     var leftRegions = solid.map(function (r) { return cleanSpikes(inter(r, leftHP)); });
     var rightRegions = solid.map(function (r) { return cleanSpikes(inter(r, rightHP)); });
     var left = meshSlabs(levels, leftRegions);
@@ -1077,6 +1241,16 @@
         else maxLedge = Math.max(maxLedge, lw);
       }
     });
+    if (capRegions) {
+      // printed upside down: a downward face is where a slab sticks out
+      // past the one above it (in body coordinates)
+      for (k = capRegions.length - 2; k >= 0; k--) {
+        var dnp = diff(capRegions[k], capRegions[k + 1]);
+        if (!dnp.length) continue;
+        downArea += areaMm2(dnp);
+        maxLedge = Math.max(maxLedge, ledgeOf(dnp));
+      }
+    }
     if (collarRegions) {
       for (k = 1; k < collarRegions.length; k++) {
         var dnc = diff(collarRegions[k], collarRegions[k - 1]);
@@ -1087,12 +1261,21 @@
     }
 
     // ---- panels (1:1 outlines, mm)
-    var topPanel = diff(offset(I, -ec), pocket);
+    var topPanel = topPanel0;
     var backPanel = offset(cavB, -ec);
 
     // ---- checks and warnings
     var bed = p.bedMm;
-    if (L >= bed) warnings.push('Body length ' + (L / IN).toFixed(2) + '″ does not fit the ' + (bed / IN).toFixed(2) + '″ print bed; keep it under ' + (bed / IN).toFixed(2) + '″.');
+    // a part needs ~2 mm of bed to spare (skirt / first-layer squish)
+    var bedFit = L <= bed - BED_MARGIN && maxHw <= bed - BED_MARGIN;
+    var diag = null;
+    if (L > bed - BED_MARGIN) {
+      // will each half fit corner to corner? (best rotation of its footprint)
+      diag = Math.max(squareFit(halfPoly(outline, 1)), squareFit(halfPoly(outline, -1)));
+      warnings.push('Body length ' + (L / IN).toFixed(2) + '″ leaves under ' + BED_MARGIN + ' mm to spare on the ' + (bed / IN).toFixed(2) + '″ print bed. ' +
+        (diag <= bed - BED_MARGIN ? 'Each half fits turned corner to corner (needs a ' + (diag / IN).toFixed(2) + '″ square); ' : 'Each half needs a ' + (diag / IN).toFixed(2) + '″ square even turned diagonally; ') +
+        'otherwise use a bigger bed, cut each half in two, or scale the body down.');
+    }
     if (maxHw >= bed) warnings.push('A half is ' + (maxHw / IN).toFixed(2) + '″ wide, more than the print bed.');
     if (p.neckScrewMode === 'wells' && plasticUnderPocket < 19) warnings.push('Only ' + plasticUnderPocket.toFixed(1) + ' mm of printed floor between the screw wells and the pocket; 19 mm or more recommended.');
     var backLen = (L - bl) - tbl;
@@ -1124,12 +1307,13 @@
 
     var groups = { left: left, right: right };
     if (collar) groups.collar = collar;
+    if (cap) groups.cap = cap;
     var meta = {
       params: p,
       lengthMm: L, widthMm: maxL + maxR, depthMm: D, requestedDepthMm: Dreq, minDepthMm: Dmin,
       halfFootprintMm: [maxHw, L], leftFootprintMm: [maxL, L], rightFootprintMm: [maxR, L],
       symmetric: sh.kind !== 'tstyle', cutawaySide: sh.cutawaySide || null,
-      halfHeightMm: D, fitsBed: L < bed && maxHw < bed, bedMm: bed,
+      halfHeightMm: D, fitsBed: bedFit, diagonalSquareMm: diag, bedMm: bed,
       panelTopZ: panelTopZ, pocketFloorZ: zF, topSlot: [zTS0, zTS1], bottomSlot: [zBL, zBS],
       baseTopMm: baseTop, neckBlock: { lengthMm: bl, widthMm: 2 * kw, heightMm: zTS0 },
       tailBlock: { lengthMm: tbl, widthMm: 2 * tw, heightMm: zTS0, web: p.tailBolts >= 2 ? [0, web1] : null },
@@ -1137,7 +1321,7 @@
       plasticUnderPocketMm: plasticUnderPocket,
       neckScrews: screws.map(function (q) { return { x: q[0], y: q[1] }; }),
       neckScrewThroughMm: throughMm, neckScrewLengthIn: screwIn, neckScrewNeedMm: screwMm, neckScrewBiteMm: biteMm, neckScrewWells: wellsUsed, neckScrewNote: screwNote,
-      bolts: boltInfo, boltSize: bolt.label, collar: collarInfo,
+      bolts: boltInfo, boltSize: bolt.label, collar: collarInfo, cap: capInfo,
       panels: {
         top: { outline: pathsToMm(topPanel), sizeMm: [lpanelBox[2] - lpanelBox[0], lpanelBox[3] - lpanelBox[1]], areaMm2: areaMm2(topPanel) },
         back: { outline: pathsToMm(backPanel), sizeMm: [bpanelBox[2] - bpanelBox[0], bpanelBox[3] - bpanelBox[1]], areaMm2: areaMm2(backPanel) },
@@ -1147,10 +1331,10 @@
       channel: { depthMm: cD, engagementMm: cD - ec, roofFlatMm: cA, heightMm: t + fit, innerLipMm: lipIn, topLipMm: p.topLipMm,
         bottomLipMm: p.bottomLipMm, topRimMm: topRim, topCorbelFootZ: zTA, backLipTopZ: zBU },
       levels: levels.length, outline: outline,
-      triangles: { left: left.length / 9, right: right.length / 9, collar: collar ? collar.length / 9 : 0 }
+      triangles: { left: left.length / 9, right: right.length / 9, collar: collar ? collar.length / 9 : 0, cap: cap ? cap.length / 9 : 0 }
     };
     return { groups: groups, meta: meta, warnings: warnings,
-      slabs: { levels: levels, left: leftRegions, right: rightRegions, collar: collarRegions, collarLevels: collarLevels } };
+      slabs: { levels: levels, left: leftRegions, right: rightRegions, collar: collarRegions, collarLevels: collarLevels, cap: capRegions, capLevels: capLevels } };
   }
 
   // Is (x, y, z) (mm) inside the printed material of one half?
@@ -1168,6 +1352,18 @@
     return wind > 0;
   }
 
+  // turn a part upside down for printing: z -> zTop - z, triangles
+  // re-wound so they still face outwards
+  function flipZ(tris, zTop) {
+    var out = new Float32Array(tris.length);
+    for (var i = 0; i < tris.length; i += 9) {
+      for (var v = 0; v < 3; v++) {
+        var src = i + [0, 2, 1][v] * 3, dst = i + v * 3;
+        out[dst] = tris[src]; out[dst + 1] = tris[src + 1]; out[dst + 2] = zTop - tris[src + 2];
+      }
+    }
+    return out;
+  }
   function bbox(paths) {
     var b = [Infinity, Infinity, -Infinity, -Infinity];
     paths.forEach(function (pp) {
@@ -1246,7 +1442,7 @@
     IN: IN, DEFAULTS: DEFAULTS, STYLES: STYLES, STYLE_KEYS: STYLE_KEYS, STYLE_FIELDS: STYLE_FIELDS, BOLTS: BOLTS,
     STEP_MM: STEP, WALL_MIN_MM: WALL_MIN,
     styleParams: styleParams, matchStyle: matchStyle, withDefaults: withDefaults,
-    shapeOf: shapeOf, halfWidth: halfWidth, outlinePoints: outlinePoints,
+    shapeOf: shapeOf, halfWidth: halfWidth, outlinePoints: outlinePoints, tstyleProportions: tstyleProportions, flipZ: flipZ,
     build: build, solidAt: solidAt, panelMesh: panelMesh, panelSVG: panelSVG, panelDXF: panelDXF,
     _meshSlabs: meshSlabs, _toPath: toPath
   };

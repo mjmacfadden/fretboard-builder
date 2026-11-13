@@ -65,7 +65,7 @@ function build(name, p) {
     const p = B.styleParams(k);
     assert.strictEqual(p.style, k);
     assert.strictEqual(B.matchStyle(p), k, `A: ${k} matches itself`);
-    assert.ok(p.lengthIn * IN < 327.66, `A: ${k} preset is shorter than the 12.9in bed`);
+    assert.ok(p.lengthIn * IN < 327.66 || (k === 't-style' && p.lengthIn === 12.9), `A: ${k} preset is no longer than the 12.9in bed`);
     const edited = Object.assign({}, p, { depthIn: p.depthIn + 0.1 });
     assert.strictEqual(B.matchStyle(edited), 'custom', `A: editing ${k} -> custom`);
   });
@@ -105,24 +105,42 @@ function build(name, p) {
   const bx = B.shapeOf(B.styleParams('cigar-box'));
   approx(B.halfWidth(bx, bx.L / 2) * 2, 7 * IN, 1e-6, 'B: box width');
   approx(B.halfWidth(bx, bx.L * 0.2) * 2, 7 * IN, 1e-6, 'B: box sides straight');
-  // T-Style: single cutaway, slab outline, squared-off neck end
+  // T-Style: outline traced from the drawing, 12.9in long, neck end closed
   const tp = B.styleParams('t-style');
   const ts = B.shapeOf(tp);
-  approx(ts.L, 12.5 * IN, 1e-9, 'B: T-Style length');
+  approx(ts.L, 12.9 * IN, 1e-9, 'B: T-Style length is 12.9in');
   const tpts = B.outlinePoints(ts);
   const txs = tpts.map(q => q[0]), tys = tpts.map(q => q[1]);
-  approx(Math.max(...txs) - Math.min(...txs), 10 * IN, 0.5, 'B: T-Style width');
+  const pr = B.tstyleProportions();
+  approx(ts.scale[0], ts.scale[1], 1e-12, 'B: T-Style scaled uniformly');
+  approx(Math.max(...txs) - Math.min(...txs), pr.widthPerLength * ts.L, 0.2, 'B: T-Style width = drawing proportion');
+  approx(Math.min(...tys), 0, 1e-6, 'B: T-Style tail at y = 0');
   approx(Math.max(...tys), ts.L, 1e-6, 'B: T-Style reaches the neck end');
-  approx(15.9 / 12.75, ts.L / (Math.max(...txs) - Math.min(...txs)), 0.02, 'B: T-Style keeps the published length:width proportion');
-  approx(B.halfWidth(ts, ts.c1, 'left'), B.halfWidth(ts, ts.c1, 'right'), 1e-6, 'B: T-Style lower bout symmetric');
-  const yCut = 0.8 * ts.L;
-  assert.ok(B.halfWidth(ts, yCut, 'right') < B.halfWidth(ts, yCut, 'left') - 15, 'B: T-Style cutaway on the treble (right, +x) side');
-  // flat neck end: both sides still have width just below the neck end
-  assert.ok(B.halfWidth(ts, ts.L - 0.5, 'right') > 25 && B.halfWidth(ts, ts.L - 0.5, 'left') > 25, 'B: T-Style neck end is squared off');
+  approx(pr.pocketLength * 12.9, 3.0, 0.02, 'B: drawing pocket marker is 3in long');
+  approx(pr.pocketWidth * 12.9, 1.5, 0.01, 'B: drawing pocket marker is 1.5in wide');
+  approx(pr.pocketEndGap, 0, 1e-9, 'B: pocket marker ends at the neck end');
+  const pip = (poly, x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j];
+    if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
+  // the drawing is kept: every traced point is on or inside the outline
+  ts.raw.forEach(q => assert.ok(pip(tpts, q[0], q[1]) || tpts.some(o => Math.hypot(o[0] - q[0], o[1] - q[1]) < 0.05) ||
+    tpts.some((o, i) => { const n = tpts[(i + 1) % tpts.length]; const dx = n[0] - o[0], dy = n[1] - o[1];
+      const t = Math.max(0, Math.min(1, ((q[0] - o[0]) * dx + (q[1] - o[1]) * dy) / (dx * dx + dy * dy)));
+      return Math.hypot(o[0] + t * dx - q[0], o[1] + t * dy - q[1]) < 0.05; }), 'B: T-Style keeps the drawn outline'));
+  // cutaway on the treble (+x) side: the notch beside the pocket wall
+  const yCut = ts.L - 25;
+  assert.ok(!pip(tpts, ts.side + 8, yCut) && pip(tpts, -(ts.side + 8), yCut), 'B: T-Style cutaway on the treble (right, +x) side');
+  // the treble horn still reaches out beyond the cutaway
+  assert.ok(B.halfWidth(ts, yCut, 'right') > 90, 'B: T-Style keeps the treble horn');
+  // closed neck end: a straight edge across, with a wall each side of the pocket
+  const pw2 = tp.pocketWidthIn * IN / 2;
+  [-1, 1].forEach(sg => { for (let y = ts.L - tp.pocketLengthIn * IN; y < ts.L; y += 2) assert.ok(pip(tpts, sg * (ts.side - 0.3), y), 'B: wall beside the pocket'); });
+  assert.ok(ts.side - pw2 > tp.wallMm + 7, 'B: pocket side walls carry the channel');
+  assert.ok(B.halfWidth(ts, ts.L - 0.5, 'right') >= ts.side - 0.01 && B.halfWidth(ts, ts.L - 0.5, 'left') >= ts.side - 0.01, 'B: T-Style neck end is closed');
   const lh = B.shapeOf(Object.assign(B.styleParams('t-style'), { leftHanded: true }));
   approx(B.halfWidth(lh, yCut, 'left'), B.halfWidth(ts, yCut, 'right'), 1e-9, 'B: left-handed mirrors the cutaway');
+  approx(B.halfWidth(lh, 0.3 * ts.L, 'right'), B.halfWidth(ts, 0.3 * ts.L, 'left'), 1e-9, 'B: left-handed mirrors the bass side');
   assert.strictEqual(lh.cutawaySide, 'left');
-  console.log('Body B ok: outline passes through the bout / waist widths; round is a circle; box is straight-sided');
+  console.log('Body B ok: outline passes through the bout / waist widths; round is a circle; box is straight-sided; T-Style traced from the drawing at 12.9in, pocket marker 3 x 1.5in, neck end closed');
 }
 
 // === Body C: watertight halves, mirror images, flat on the bed ===========
@@ -167,12 +185,31 @@ function build(name, p) {
     } else {
       assert.ok(!r.meta.collar, `C ${name}: no collar part when it is off`);
     }
+    if (r.groups.cap) {
+      // cutaway cap: closed, and flipped upside down it sits flat on the bed
+      const Cp = r.groups.cap, bp = bounds(Cp);
+      assert.strictEqual(edgeErrors(Cp), 0, `C ${name}: cutaway cap not watertight`);
+      assert.ok(signedVolume(Cp) > 0, `C ${name}: cap outward normals`);
+      approx(bp[2], r.meta.topSlot[0], 1e-3, `C ${name}: cap starts at the top panel's seat`);
+      approx(bp[5], r.meta.depthMm, 1e-3, `C ${name}: cap reaches the top face`);
+      const Fp = B.flipZ(Cp, r.meta.cap.topZ), bfp = bounds(Fp);
+      assert.strictEqual(edgeErrors(Fp), 0, `C ${name}: flipped cap not watertight`);
+      assert.ok(signedVolume(Fp) > 0, `C ${name}: flipped cap still faces out`);
+      approx(bfp[2], 0, 1e-3, `C ${name}: flipped cap sits on z = 0`);
+      const sg = r.meta.cap.side === 'right' ? 1 : -1;
+      assert.ok(sg > 0 ? bp[0] >= -1e-6 : bp[3] <= 1e-6, `C ${name}: cap is all on the ${r.meta.cap.side} side`);
+      assert.strictEqual(r.meta.cap.side, r.meta.cutawaySide, `C ${name}: cap is on the cutaway side`);
+      assert.ok(r.slabs.cap.every(reg => reg.length === 1), `C ${name}: cap is one piece, no holes, at every level`);
+    } else {
+      assert.ok(r.meta.symmetric, `C ${name}: no cap on a symmetric body`);
+    }
     approx(bl[2], 0, 1e-6, `C ${name}: left half sits on z = 0`);
     approx(br[2], 0, 1e-6, `C ${name}: right half sits on z = 0`);
     approx(bl[3], 0, 1e-6, `C ${name}: left half ends at the split plane`);
     approx(br[0], 0, 1e-6, `C ${name}: right half starts at the split plane`);
     approx(bl[5], r.meta.depthMm, 1e-3, `C ${name}: full depth`);
-    assert.ok(bl[4] - bl[1] < r.meta.bedMm, `C ${name}: fits the bed`);
+    if (r.meta.fitsBed) assert.ok(bl[4] - bl[1] < r.meta.bedMm, `C ${name}: fits the bed`);
+    else assert.ok(r.meta.diagonalSquareMm < r.meta.bedMm - 2 && r.warnings.some(w => /print bed/.test(w)), `C ${name}: fits only corner to corner, and says so`);
   });
   console.log('Body C ok:', Object.keys(cases).length, 'configurations, halves and neck collar closed and consistently wound, mirrored (or per-side for T-Style), flat on the bed');
 }
@@ -280,6 +317,28 @@ function build(name, p) {
       });
     });
   });
+  // the cutaway cap goes on last, straight down: at the top panel's level
+  // it is only wall, outside the ply, and above it is the lip over the ply
+  ['t-style', 'tstyle-lefty-insert'].forEach(name => {
+    const r = built[name] || build(name, Object.assign(B.styleParams('t-style'), { leftHanded: true, collarFastener: 'insert', neckBolts: 1 }));
+    const m = r.meta, cl = r.slabs.capLevels, zMid = (m.topSlot[0] + m.topSlot[1]) / 2;
+    let k = 0;
+    while (!(zMid * 1000 >= cl[k] && zMid * 1000 < cl[k + 1])) k++;
+    const c = new ClipperLib.Clipper();
+    c.AddPaths(r.slabs.cap[k], ClipperLib.PolyType.ptSubject, true);
+    c.AddPaths(m.panels.top.outline.map(pp => pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }))), ClipperLib.PolyType.ptClip, true);
+    const out = new ClipperLib.Paths();
+    c.Execute(ClipperLib.ClipType.ctIntersection, out, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+    assert.ok(out.reduce((a, q) => a + Math.abs(ClipperLib.Clipper.Area(q)), 0) / 1e6 < 0.01, `E ${name}: cap clears the top panel as it goes on`);
+    // and the lip above the panel overlaps the ply (it holds it down)
+    const top = r.slabs.cap[r.slabs.cap.length - 1];
+    const c2 = new ClipperLib.Clipper();
+    c2.AddPaths(top, ClipperLib.PolyType.ptSubject, true);
+    c2.AddPaths(m.panels.top.outline.map(pp => pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }))), ClipperLib.PolyType.ptClip, true);
+    const o2 = new ClipperLib.Paths();
+    c2.Execute(ClipperLib.ClipType.ctIntersection, o2, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
+    assert.ok(o2.reduce((a, q) => a + Math.abs(ClipperLib.Clipper.Area(q)), 0) / 1e6 > 200, `E ${name}: cap's lip lies over the top panel`);
+  });
   // the neck collar: set into one half sideways, then the other half
   // closes over it, exactly like the panels (checked at mid height)
   ['parlor', 't-style'].forEach(name => {
@@ -299,7 +358,7 @@ function build(name, p) {
   const notchPt = { X: 0, Y: Math.round((m.lengthMm - 10) * 1000) };
   const inPanel = m.panels.top.outline.some(pp => ClipperLib.Clipper.PointInPolygon(notchPt, pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }))) !== 0);
   assert.ok(!inPanel, 'E: top panel is notched for the neck pocket');
-  console.log('Body E ok: both panels and the neck collar clear each half as it closes in sideways, reach into the tracks, top panel notched');
+  console.log('Body E ok: both panels and the neck collar clear each half as it closes in sideways (T-Style: cutaway cap goes on last, from above), reach into the channels, top panel notched');
 }
 
 // === Body F: neck pocket, block and screw holes ==========================
@@ -408,8 +467,15 @@ function build(name, p) {
     // the channel roofs: cA wide on straight runs, a little more measured
     // into inside corners, where the ledge is held on two sides
     assert.ok(o.channelRoofLedgeMm >= cA - 0.1 && o.channelRoofLedgeMm <= cA * Math.SQRT2 + 0.1, `H ${k}: channel roof ledge ${o.channelRoofLedgeMm} mm`);
-    assert.deepStrictEqual(r.warnings, [], `H ${k}: preset builds without warnings`);
-    assert.ok(r.meta.fitsBed, `H ${k}: fits the bed`);
+    if (k === 't-style') {
+      // 12.9in long on a 12.9in bed: the only warning is the bed one, and
+      // each half fits turned corner to corner
+      assert.ok(r.warnings.length === 1 && /print bed/.test(r.warnings[0]) && /corner to corner/.test(r.warnings[0]), `H ${k}: bed warning only`);
+      assert.ok(!r.meta.fitsBed && r.meta.diagonalSquareMm < r.meta.bedMm - 10, `H ${k}: fits diagonally`);
+    } else {
+      assert.deepStrictEqual(r.warnings, [], `H ${k}: preset builds without warnings`);
+      assert.ok(r.meta.fitsBed, `H ${k}: fits the bed`);
+    }
   });
   const long = B.build(Object.assign(B.styleParams('cigar-box'), { lengthIn: 13.2 }));
   assert.ok(!long.meta.fitsBed && long.warnings.some(w => /print bed/.test(w)), 'H: 13.2in body warns about the bed');
@@ -511,7 +577,7 @@ function build(name, p) {
     const yw = L - m.pocket.lengthMm - 3;
     const edgeR = B.halfWidth(sh, yw, 'right') - p.wallMm;
     if (edgeR < m.neckBlock.widthMm / 2) assert.ok(!B.solidAt(r, 'collar', edgeR - p.collarClearanceMm / 2, yw, zF + 3), `K ${name}: collar clears the wall`);
-    assert.deepStrictEqual(r.warnings, [], `K ${name}: no warnings`);
+    assert.deepStrictEqual(r.warnings.filter(w => !/print bed/.test(w)), [], `K ${name}: no warnings`);
   });
   // heat-set insert version: blind hole from the underside with a 45deg
   // pointed roof (no bridging), insert-sized
@@ -541,7 +607,7 @@ function build(name, p) {
       const m = r.meta;
       ['left', 'right', 'collar'].forEach(h => assert.strictEqual(edgeErrors(r.groups[h]), 0, `L ${name} ${wall} mm: ${h} watertight`));
       assert.ok(m.overhang.stairLedgeMm <= 1.0 && m.overhang.channelRoofLedgeMm <= p.channelRoofFlatMm * Math.SQRT2 + 0.1, `L ${name} ${wall} mm: no supports (${JSON.stringify(m.overhang)})`);
-      assert.deepStrictEqual(r.warnings, [], `L ${name} ${wall} mm: no warnings`);
+      assert.deepStrictEqual(r.warnings.filter(w => !/print bed/.test(w)), [], `L ${name} ${wall} mm: no warnings`);
       const sh = B.shapeOf(p), y = sh.c1, inner = B.halfWidth(sh, y, 'left') - wall;
       // plain wall exactly `wall` thick between the channels, lips still reach cD in
       const zMid = (m.channel.topCorbelFootZ + m.baseTopMm) / 2;

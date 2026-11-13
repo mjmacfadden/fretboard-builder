@@ -199,11 +199,29 @@ fretboard page) — same panels, preview and offline behaviour.
   stretching the panels, so no bolt is needed in between. Glue in the
   tracks is optional.
 - **Body styles**: Parlor, Small dreadnought style, Round, Cigar-box
-  style and T-Style (a single-cutaway slab, 12.5″ × 10″ × 1.75″ — the
-  published ~15.9″ × 12.75″ outline scaled to the bed, 1.85″ deep — the channels need 1.80″ minimum; left-handed
-  option mirrors the cutaway) presets; editing any shape field switches to Custom. Everything is
+  style and T-Style presets. The T-Style outline is traced from a drawing
+  (`t-style-body-outline.svg`, built into `body-geometry.js`) and scaled
+  uniformly to 12.9″ × 10.52″, 1.85″ deep (the channels need 1.80″
+  minimum); the drawing's pocket marker sets the pocket (it measures
+  3.01″ × 1.505″ at this scale). The drawing's neck end is the 1.5″
+  tongue the neck sits on, so the rim closes it with a straight edge
+  from the bass horn to the neck end and a straight wall beside the
+  pocket on the treble side; the cutaway curve and both horns are
+  otherwise as drawn. The left-handed option mirrors it. At 12.9″ it
+  uses the whole 12.9″ bed, so the page keeps a bed warning on: each half
+  fits turned corner to corner (an 11.7″ square), or use a bigger bed,
+  cut the halves, or scale the body down.
+- **Cutaway cap** (T-Style only): the treble horn curls back towards the
+  neck, so the cutaway's walls sit between the neck and the horn's part of
+  the top panel and the treble half could not slide on over the panel with
+  them in place. Those walls, from the top panel's seat up, with their top
+  lip, are a separate small part: close the body, then glue the cap down
+  onto the half's wall top and the top panel. It prints top face down
+  with no supports. The page finds this automatically (any outline whose
+  rim would collide gets a cap); the other presets don't need one.
+- Editing any shape field switches to Custom. Everything is
   checked against the print bed (12.9″ by default) and warned in the page.
-- **Downloads**: an STL for each half, the neck collar STL, and the top and back panel outlines
+- **Downloads**: an STL for each half, the neck collar STL, the cutaway cap STL (T-Style), and the top and back panel outlines
   as 1:1 SVG (mm, with a 100 mm check bar) or DXF.
 
 Print each half back face down in PETG (or ASA), 7 perimeters (the 3 mm wall prints fully solid), 6 top and

@@ -85,6 +85,7 @@
       { tris: gap ? shifted(g.right, gap, 0, 0) : g.right, color: WOOD2 }
     ];
     if (g.collar) layers.push({ tris: gap ? shifted(g.collar, 0, 0, m.depthMm - m.collar.bottomZ + 30) : g.collar, color: [176, 132, 84] });
+    if (g.cap) layers.push({ tris: gap ? shifted(g.cap, (m.cap.side === 'right' ? 1 : -1) * gap, 0, 30) : g.cap, color: [150, 112, 70] });
     if (viewMode !== 'rim') {
       if (!result.panelTris) {
         result.panelTris = {
@@ -119,7 +120,9 @@
       : fmtIn(m.leftFootprintMm[0]) + ' (left) / ' + fmtIn(m.rightFootprintMm[0]) + ' (right)') + ' footprint, ' +
       fmtIn(m.halfHeightMm) + ' tall — ' + (m.fitsBed
         ? 'fits the ' + fmtIn(m.bedMm) + ' bed (' + (m.bedMm - m.lengthMm).toFixed(1) + ' mm to spare on length)'
-        : 'does NOT fit the ' + fmtIn(m.bedMm) + ' bed (' + Math.abs(m.bedMm - m.lengthMm).toFixed(1) + ' mm too long)');
+        : m.diagonalSquareMm && m.diagonalSquareMm <= m.bedMm - 2
+          ? 'too long to print straight on the ' + fmtIn(m.bedMm) + ' bed (' + (m.bedMm - m.lengthMm).toFixed(1) + ' mm to spare); turned corner to corner each half needs only a ' + fmtIn(m.diagonalSquareMm) + ' square'
+          : 'does NOT fit the ' + fmtIn(m.bedMm) + ' bed (' + Math.abs(m.bedMm - m.lengthMm).toFixed(1) + ' mm too long)');
     $('panels-out').textContent = 'top ' + m.panels.top.sizeMm[1].toFixed(1) + ' × ' + m.panels.top.sizeMm[0].toFixed(1) +
       ' mm (with the pocket notch), back ' + m.panels.back.sizeMm[1].toFixed(1) + ' × ' + m.panels.back.sizeMm[0].toFixed(1) + ' mm';
     var ch = m.channel;
@@ -145,6 +148,14 @@
         (c.footprintMm[0] / IN).toFixed(2) + '″ × ' + (c.footprintMm[1] / IN).toFixed(2) + '″ × ' + fmtMm(c.heightMm) +
         ', split at the pocket floor. ' + c.boltNote
       : 'off — the neck block is part of each half';
+    var cp = m.cap;
+    $('cap-row').hidden = !cp;
+    $('cap-dl-row').hidden = !cp;
+    $('cap-out').textContent = cp
+      ? 'the cutaway\'s walls and top lip (' + (cp.footprintMm[0] / IN).toFixed(2) + '″ × ' + (cp.footprintMm[1] / IN).toFixed(2) + '″ × ' + fmtMm(cp.heightMm) +
+        ') are a separate part: the horn curls back past the neck, so the ' + cp.side + ' half could not close over the top panel with them on. ' +
+        'Close the body, then glue the cap down onto the ' + cp.side + ' half\'s ' + fmtMm(cp.wallSeatMm) + ' wall top and the top panel. Prints top face down.'
+      : '';
     $('overhang-out').textContent = 'no supports needed — 45° staircases (steps of ' + B.STEP_MM + ' mm, widest ' +
       m.overhang.stairLedgeMm.toFixed(1) + ' mm) plus the ' + ch.roofFlatMm.toFixed(1) + ' mm flat channel roofs';
 
@@ -155,13 +166,13 @@
     var base = 'body-' + (p.style === 'custom' ? 'custom' : p.style) + '-' + p.lengthIn.toFixed(2) + 'in' +
       (p.leftHanded && !m.symmetric ? '-lefty' : '');
     result.names = {
-      left: base + '-left-half.stl', right: base + '-right-half.stl', collar: base + '-neck-collar.stl',
+      left: base + '-left-half.stl', right: base + '-right-half.stl', collar: base + '-neck-collar.stl', cap: base + '-cutaway-cap.stl',
       topSvg: base + '-top-panel.svg', backSvg: base + '-back-panel.svg',
       topDxf: base + '-top-panel.dxf', backDxf: base + '-back-panel.dxf'
     };
-    $('filename').textContent = result.names.left + ' · ' + result.names.right + (m.collar ? ' · ' + result.names.collar : '');
+    $('filename').textContent = result.names.left + ' · ' + result.names.right + (m.collar ? ' · ' + result.names.collar : '') + (m.cap ? ' · ' + result.names.cap : '');
     $('status').textContent = 'Built in ' + (Date.now() - t0) + ' ms — ' +
-      (m.triangles.left + m.triangles.right + m.triangles.collar).toLocaleString() + ' triangles, watertight parts.';
+      (m.triangles.left + m.triangles.right + m.triangles.collar + m.triangles.cap).toLocaleString() + ' triangles, watertight parts.';
     render(true);
   }
 
@@ -206,6 +217,10 @@
   // the collar prints underside down: move it to z = 0 for the STL
   $('dl-collar').addEventListener('click', function () {
     if (result && result.groups.collar) download(STLExport.trianglesToSTL(shifted(result.groups.collar, 0, 0, -result.meta.collar.bottomZ)), result.names.collar);
+  });
+  // the cutaway cap prints upside down, its top face on the bed
+  $('dl-cap').addEventListener('click', function () {
+    if (result && result.groups.cap) download(STLExport.trianglesToSTL(B.flipZ(result.groups.cap, result.meta.cap.topZ)), result.names.cap);
   });
   $('dl-top-svg').addEventListener('click', function () { if (result) download(B.panelSVG(result.meta.panels.top.outline, 'Top panel'), result.names.topSvg, 'image/svg+xml'); });
   $('dl-back-svg').addEventListener('click', function () { if (result) download(B.panelSVG(result.meta.panels.back.outline, 'Back panel'), result.names.backSvg, 'image/svg+xml'); });

@@ -51,14 +51,14 @@
         <option value="small-dread">Small dreadnought style — 12.75″ × 10″</option>
         <option value="round">Round — 11.5″ circle</option>
         <option value="cigar-box">Cigar-box style — 12″ × 7″</option>
-        <option value="t-style">T-Style — single cutaway slab, 12.5″ × 10″ × 1.85″</option>
+        <option value="t-style">T-Style — single cutaway slab traced from a drawing, 12.9″ × 10.52″ × 1.85″</option>
         <option value="custom">Custom — your own shape</option>
       </select>
     </label>
 
     <label>
       Body length <span class="hint">(must stay under the print bed)</span>
-      <span class="row"><input type="number" id="lengthIn" value="12.5" min="7" max="12.85" step="0.05"><span class="unit">in</span></span>
+      <span class="row"><input type="number" id="lengthIn" value="12.5" min="7" max="16" step="0.05"><span class="unit">in</span></span>
     </label>
 
     <div id="bouts-rows">
@@ -229,6 +229,9 @@
         <button type="button" id="dl-left">Left half STL</button>
         <button type="button" id="dl-right">Right half STL</button>
       </div>
+      <div class="pair" id="cap-dl-row" hidden>
+        <button type="button" id="dl-cap">Cutaway cap STL</button>
+      </div>
       <div class="pair" id="collar-dl-row">
         <button type="button" id="dl-collar">Neck collar STL</button>
       </div>
@@ -270,6 +273,7 @@
       <div><span class="k">Neck screws</span><span class="v" id="screws-out">—</span></div>
       <div><span class="k">Clamshell bolts</span><span class="v" id="bolts-out">—</span></div>
       <div><span class="k">Neck collar</span><span class="v" id="collar-out">—</span></div>
+      <div id="cap-row" hidden><span class="k">Cutaway cap</span><span class="v" id="cap-out">—</span></div>
       <div><span class="k">Overhangs</span><span class="v" id="overhang-out">—</span></div>
     </div>
     <p class="warning" id="warnings" hidden></p>
