@@ -134,7 +134,7 @@ function build(name, p) {
   // closed neck end: a straight edge across, with a wall each side of the pocket
   const pw2 = tp.pocketWidthIn * IN / 2;
   [-1, 1].forEach(sg => { for (let y = ts.L - tp.pocketLengthIn * IN; y < ts.L; y += 2) assert.ok(pip(tpts, sg * (ts.side - 0.3), y), 'B: wall beside the pocket'); });
-  assert.ok(ts.side - pw2 > tp.wallMm + 7, 'B: pocket side walls carry the channel');
+  assert.ok(ts.side - pw2 > tp.wallMm + tp.channelDepthMm, 'B: pocket side walls carry the channel');
   assert.ok(B.halfWidth(ts, ts.L - 0.5, 'right') >= ts.side - 0.01 && B.halfWidth(ts, ts.L - 0.5, 'left') >= ts.side - 0.01, 'B: T-Style neck end is closed');
   const lh = B.shapeOf(Object.assign(B.styleParams('t-style'), { leftHanded: true }));
   approx(B.halfWidth(lh, yCut, 'left'), B.halfWidth(ts, yCut, 'right'), 1e-9, 'B: left-handed mirrors the cutaway');
@@ -215,21 +215,23 @@ function build(name, p) {
 }
 
 // === Body D: panel channels ==============================================
-// Each panel edge sits in a channel: an inward flange ring with a solid lip
-// on each face of the panel. r = distance in from the channel back (the
-// inside face of the wall), measured at the widest point of the lower bout.
+// Each panel edge sits in a channel with a flat lip on each face of the
+// panel. r = distance in from the channel back (the inside face of the
+// wall), measured at the widest point of the lower bout.
 {
   const p = B.styleParams('parlor');
   const r = build('parlor', p);
   const m = r.meta, ch = m.channel;
-  const D = m.depthMm, t = p.panelThicknessMm, fit = p.panelFitMm;
-  const cD = p.channelDepthMm, cA = p.channelRoofFlatMm, ec = p.panelEdgeGapMm;
-  approx(m.topSlot[1] - m.topSlot[0], t + fit, 1e-9, 'D: top channel height = panel + clearance');
-  approx(m.bottomSlot[1] - m.bottomSlot[0], t + fit, 1e-9, 'D: back channel height');
-  approx(m.bottomSlot[0], p.bottomLipMm, 1e-9, 'D: bottom lip under the back panel');
-  approx(D - m.topSlot[1], (cD - cA) + p.topLipMm, 1e-9, 'D: rim above the top channel = 45deg climb + top lip');
+  const D = m.depthMm, t = p.panelThicknessMm, fit = p.panelFitMm, sag = p.channelSagMm, lip = p.lipMm;
+  const cD = p.channelDepthMm, ec = p.panelEdgeGapMm;
+  assert.strictEqual(B.DEFAULTS.lipMm, 2, 'D: 2 mm lips by default');
+  assert.strictEqual(B.DEFAULTS.channelDepthMm, 4, 'D: 4 mm lip overlap by default');
+  assert.ok(sag >= 0.2, 'D: some sag allowance by default');
+  approx(m.topSlot[1] - m.topSlot[0], t + fit + sag, 1e-9, 'D: top channel height = panel + clearance + sag allowance');
+  approx(m.bottomSlot[1] - m.bottomSlot[0], t + fit + sag, 1e-9, 'D: back channel height');
+  approx(m.bottomSlot[0], lip, 1e-9, 'D: bottom lip under the back panel');
+  approx(D - m.topSlot[1], lip, 1e-9, 'D: rim above the top channel = the 2 mm top lip, no chamfer');
   approx(ch.engagementMm, cD - ec, 1e-9, 'D: engagement');
-  assert.ok(ch.engagementMm >= 6 && ch.engagementMm <= 8, 'D: 6-8 mm of each panel edge held');
   const sh = B.shapeOf(p);
   const y = p.lowerPos * sh.L, inner = B.halfWidth(sh, y) - p.wallMm;
   const X = (rr) => -(inner - rr);            // left half, rr mm in from the channel back
@@ -239,26 +241,21 @@ function build(name, p) {
     const z = (sl[0] + sl[1]) / 2;
     assert.ok(S(-0.3, z), `D ${name}: wall solid behind the channel`);
     assert.ok(!S(0.3, z) && !S(cD + 1, z) && !R(0.3, z), `D ${name}: channel open from the wall inwards`);
-    // bearing lips just below and just above the panel, the full reach
-    assert.ok(S(0.3, sl[0] - 0.2) && S(cD - 0.3, sl[0] - 0.2) && !S(cD + 0.3, sl[0] - 0.2), `D ${name}: lip under the panel reaches ${cD} mm`);
-    assert.ok(R(cD - 0.3, sl[0] - 0.2), `D ${name}: right half lip under the panel`);
-    // the roof: flat for cA next to the wall, then 45 degrees
-    assert.ok(S(cA - 0.3, sl[1] + 0.1) && !S(cA + 0.3, sl[1] + 0.1), `D ${name}: flat roof ${cA} mm wide`);
-    assert.ok(S(cD - 0.3, sl[1] + (cD - cA) + 0.2), `D ${name}: roof climbs to the full reach`);
+    // flat lips just below and just above the panel: the full reach, the
+    // full thickness right to the edge, and square (no chamfer, no corbel)
+    [[sl[0] - 0.1, sl[0] - lip + 0.1], [sl[1] + 0.1, sl[1] + lip - 0.1]].forEach(([zn, zf], i) => {
+      const which = i ? 'over' : 'under';
+      for (let rr = 0.3; rr < cD; rr += 0.5) assert.ok(S(rr, zn) && S(rr, zf), `D ${name}: lip ${which} the panel solid at ${rr} mm`);
+      assert.ok(!S(cD + 0.3, zn) && !S(cD + 0.3, zf), `D ${name}: lip ${which} the panel stops at ${cD} mm, square edge`);
+      assert.ok(R(cD - 0.3, zn), `D ${name}: right half lip ${which} the panel`);
+    });
+    // beyond the lips: nothing (no chamfer or staircase under / over a lip)
+    const zOut = [sl[0] - lip - 0.2, sl[1] + lip + 0.2].filter(zz => zz > 0 && zz < D);
+    zOut.forEach(zz => assert.ok(!S(0.3, zz), `D ${name}: nothing past the ${lip} mm lip at z=${zz.toFixed(2)}`));
   });
-  // lip thicknesses at the lip edge
-  assert.ok(S(cD - 0.3, 0.2) && S(cD - 0.3, p.bottomLipMm - 0.2), 'D: back panel bottom lip solid to its edge, on the bed');
-  assert.ok(S(cD - 0.3, ch.backLipTopZ - 0.2) && S(cD - 0.3, ch.backLipTopZ - p.innerLipMm + 0.2) && !S(cD - 0.3, ch.backLipTopZ + 0.2), 'D: back channel upper lip ' + p.innerLipMm + ' mm thick at its edge');
-  assert.ok(S(cD - 0.3, m.topSlot[0] - p.innerLipMm + 0.2), 'D: top channel lower lip ' + p.innerLipMm + ' mm thick at its edge');
-  assert.ok(S(cD - 0.3, D - 0.2) && S(cD - 0.3, D - p.topLipMm + 0.2), 'D: top lip ' + p.topLipMm + ' mm thick at its edge');
-  // under the top channel's lower lip: a 45-degree corbel back to the wall
-  const zMidC = ch.topCorbelFootZ + cD / 2;
-  assert.ok(S(cD / 2 - 0.7, zMidC) && !S(cD / 2 + 0.7, zMidC), 'D: 45deg corbel under the top channel lip');
-  assert.ok(!S(0.3, ch.topCorbelFootZ - 0.3), 'D: plain wall below the corbel');
   // the outside of the rim is untouched (a clean wall face)
   for (let z = 0.2; z < D; z += 1) assert.ok(S(-p.wallMm + 0.3, z), `D: outer wall solid at z=${z.toFixed(1)}`);
-  console.log('Body D ok: channels', (t + fit).toFixed(3), 'mm tall,', cD, 'mm lips on both faces (', ch.engagementMm, 'mm of panel held ), flat roof', cA, 'mm then 45deg, lips',
-    p.bottomLipMm + '/' + p.innerLipMm + '/' + p.innerLipMm + '/' + p.topLipMm, 'mm');
+  console.log('Body D ok: channels', (t + fit + sag).toFixed(3), 'mm tall (' + sag + ' mm sag allowance), flat', lip, 'mm lips reaching', cD, 'mm over both faces (', ch.engagementMm, 'mm of panel held ), no chamfers');
 }
 
 // === Body E: panels slide in sideways and sit in the tracks ==============
@@ -462,10 +459,10 @@ function build(name, p) {
 {
   B.STYLE_KEYS.forEach(k => {
     const r = build(k, B.styleParams(k));
-    const o = r.meta.overhang, cA = B.DEFAULTS.channelRoofFlatMm;
+    const o = r.meta.overhang, cA = B.DEFAULTS.channelDepthMm;
     assert.ok(o.stairLedgeMm <= 1.0, `H ${k}: staircase ledge ${o.stairLedgeMm} mm`);
-    // the channel roofs: cA wide on straight runs, a little more measured
-    // into inside corners, where the ledge is held on two sides
+    // the flat lip undersides: cA (the lip overlap) wide on straight runs, a
+    // little more measured into inside corners, where the ledge is held on two sides
     assert.ok(o.channelRoofLedgeMm >= cA - 0.1 && o.channelRoofLedgeMm <= cA * Math.SQRT2 + 0.1, `H ${k}: channel roof ledge ${o.channelRoofLedgeMm} mm`);
     if (k === 't-style') {
       // 12.9in long on a 12.9in bed: the only warning is the bed one, and
@@ -479,9 +476,9 @@ function build(name, p) {
   });
   const long = B.build(Object.assign(B.styleParams('cigar-box'), { lengthIn: 13.2 }));
   assert.ok(!long.meta.fitsBed && long.warnings.some(w => /print bed/.test(w)), 'H: 13.2in body warns about the bed');
-  const shallow = B.build(Object.assign(B.styleParams('round'), { depthIn: 1.6 }));
+  const shallow = B.build(Object.assign(B.styleParams('round'), { depthIn: 1.4 }));
   assert.ok(shallow.warnings.length > 0, 'H: very shallow body warns');
-  console.log('Body H ok: overhangs are 45deg staircases (<= 1 mm) plus the 3 mm flat channel roofs; presets warning-free, bed and depth checks warn');
+  console.log('Body H ok: overhangs are 45deg staircases (<= 1 mm) plus the flat channel-lip undersides (= lip overlap); presets warning-free, bed and depth checks warn');
 }
 
 // === Body I: SVG / DXF / STL output ======================================
@@ -513,15 +510,14 @@ function build(name, p) {
     const p = B.styleParams(pick(B.STYLE_KEYS));
     Object.assign(p, {
       lengthIn: Math.min(12.85, p.lengthIn * (0.85 + rnd() * 0.2)), depthIn: 2.4 + rnd() * 1.5,
-      wallMm: 2 + rnd() * 4, channelDepthMm: 5 + rnd() * 3, channelRoofFlatMm: 2 + rnd() * 2, panelThicknessMm: pick([3.175, 3, 4]),
-      topLipMm: 2.5 + rnd() * 1.5, innerLipMm: 2.5 + rnd() * 1.5, neckScrewMode: pick(['plate', 'wells']), boltSize: pick(['M3', 'M4', '#6']),
+      wallMm: 2 + rnd() * 4, channelDepthMm: 2.5 + rnd() * 2.5, lipMm: 1.6 + rnd() * 1.4, channelSagMm: rnd() * 0.5, panelThicknessMm: pick([3.175, 3, 4]), neckScrewMode: pick(['plate', 'wells']), boltSize: pick(['M3', 'M4', '#6']),
       neckBolts: pick([0, 1, 2]), tailBolts: pick([1, 2]), pocketWidthIn: pick([1.375, 1.5, 1.625]),
       neckCollar: rnd() < 0.7, collarFastener: pick(['nut', 'insert']), leftHanded: rnd() < 0.3
     });
     const r = B.build(p);
     assert.strictEqual(edgeErrors(r.groups.left) + edgeErrors(r.groups.right), 0, `J ${n}: watertight ${JSON.stringify(p)}`);
     if (r.groups.collar) assert.strictEqual(edgeErrors(r.groups.collar), 0, `J ${n}: collar watertight ${JSON.stringify(p)}`);
-    assert.ok(r.meta.overhang.stairLedgeMm <= 1.0 && r.meta.overhang.channelRoofLedgeMm <= p.channelRoofFlatMm * Math.SQRT2 + 0.1, `J ${n}: overhang ${JSON.stringify(r.meta.overhang)}`);
+    assert.ok(r.meta.overhang.stairLedgeMm <= 1.0 && r.meta.overhang.channelRoofLedgeMm <= p.channelDepthMm * Math.SQRT2 + 0.1, `J ${n}: overhang ${JSON.stringify(r.meta.overhang)}`);
   }
   console.log('Body J ok:', N, 'random bodies watertight');
 }
@@ -606,11 +602,11 @@ function build(name, p) {
       const r = build(name + '-wall' + wall, p);
       const m = r.meta;
       ['left', 'right', 'collar'].forEach(h => assert.strictEqual(edgeErrors(r.groups[h]), 0, `L ${name} ${wall} mm: ${h} watertight`));
-      assert.ok(m.overhang.stairLedgeMm <= 1.0 && m.overhang.channelRoofLedgeMm <= p.channelRoofFlatMm * Math.SQRT2 + 0.1, `L ${name} ${wall} mm: no supports (${JSON.stringify(m.overhang)})`);
+      assert.ok(m.overhang.stairLedgeMm <= 1.0 && m.overhang.channelRoofLedgeMm <= p.channelDepthMm * Math.SQRT2 + 0.1, `L ${name} ${wall} mm: no supports (${JSON.stringify(m.overhang)})`);
       assert.deepStrictEqual(r.warnings.filter(w => !/print bed/.test(w)), [], `L ${name} ${wall} mm: no warnings`);
       const sh = B.shapeOf(p), y = sh.c1, inner = B.halfWidth(sh, y, 'left') - wall;
       // plain wall exactly `wall` thick between the channels, lips still reach cD in
-      const zMid = (m.channel.topCorbelFootZ + m.baseTopMm) / 2;
+      const zMid = (m.channel.topLowerLipZ + m.baseTopMm) / 2;
       assert.ok(B.solidAt(r, 'left', -(inner + 0.2), y, zMid) && !B.solidAt(r, 'left', -(inner - 0.2), y, zMid), `L ${name} ${wall} mm: plain wall ${wall} mm`);
       const zl = m.topSlot[0] - 0.2;
       assert.ok(B.solidAt(r, 'left', -(inner - p.channelDepthMm + 0.3), y, zl) && !B.solidAt(r, 'left', -(inner - p.channelDepthMm - 0.3), y, zl), `L ${name} ${wall} mm: lip reach`);
@@ -623,6 +619,71 @@ function build(name, p) {
   const thin = B.build(Object.assign(B.styleParams('cigar-box'), { wallMm: 1.2 }));
   assert.ok(thin.warnings.some(w => /Wall raised to the 2.0 mm minimum/.test(w)), 'L: walls under 2 mm are raised with a warning');
   console.log('Body L ok: 2 / 3 / 6 mm walls watertight, support-free, channels and blocks intact; under 2 mm is raised to 2 mm');
+}
+
+// === Body M: lip thickness / overlap settings, back channel all round ====
+{
+  const toI = pp => pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }));
+  // the back panel is one piece, and every point along its edge is under a
+  // lip on both faces: along both side walls and across both end-slab faces
+  ['parlor'].forEach(name => {
+    const r = build(name, B.styleParams(name)), m = r.meta, ch = m.channel, p = B.styleParams(name);
+    const outl = m.panels.back.outline;
+    assert.strictEqual(outl.length, 1, `M ${name}: back panel is one piece with no holes`);
+    const zUnder = ch.backSlot[0] / 2, zOver = ch.backSlot[1] + p.lipMm / 2, zIn = (ch.backSlot[0] + ch.backSlot[1]) / 2;
+    const held = p.channelDepthMm - p.panelEdgeGapMm;
+    let n = 0, ends = 0;
+    [0.5, held - 0.5].forEach(d => {
+      const co = new ClipperLib.ClipperOffset(2, 10);
+      co.AddPaths([toI(outl[0])], ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
+      const sol = new ClipperLib.Paths();
+      co.Execute(sol, -d * 1000);
+      assert.strictEqual(sol.length, 1, `M ${name}: band ${d} mm in from the panel edge is one loop`);
+      const loop = sol[0];
+      for (let i = 0; i < loop.length; i++) {
+        const a = loop[i], b = loop[(i + 1) % loop.length];
+        const len = Math.hypot(b.X - a.X, b.Y - a.Y) / 1000, steps = Math.max(1, Math.ceil(len / 2));
+        for (let k = 0; k < steps; k++) {
+          const x = (a.X + (b.X - a.X) * k / steps) / 1000, y = (a.Y + (b.Y - a.Y) * k / steps) / 1000;
+          if (Math.abs(x) < 0.4) continue;              // the split plane itself
+          const half = x < 0 ? 'left' : 'right';
+          assert.ok(B.solidAt(r, half, x, y, zUnder), `M ${name}: lip under the back panel at ${x.toFixed(1)},${y.toFixed(1)}`);
+          assert.ok(B.solidAt(r, half, x, y, zOver), `M ${name}: lip over the back panel at ${x.toFixed(1)},${y.toFixed(1)}`);
+          assert.ok(!B.solidAt(r, half, x, y, zIn), `M ${name}: channel open where the panel goes at ${x.toFixed(1)},${y.toFixed(1)}`);
+          n++;
+          if (Math.abs(y - m.tailBlock.lengthMm) < held + 0.6 || Math.abs(y - (m.lengthMm - m.neckBlock.lengthMm)) < held + 0.6) ends++;
+        }
+      }
+    });
+    assert.ok(ends > 40, `M ${name}: the channel crosses both end-slab faces (${ends} samples)`);
+    console.log(`Body M: back channel continuous round the whole back panel (${n} points checked, ${ends} on the neck / tail block faces)`);
+  });
+  // lip thickness and overlap settings, with thin and thick walls
+  [[2, 4, 3], [1.6, 3, 2], [3, 6, 2], [2, 2.5, 6], [2.5, 5, 3]].forEach(([lip, ov, wall]) => {
+    const name = `lip${lip}-ov${ov}-w${wall}`;
+    const p = Object.assign(B.styleParams('parlor'), { lipMm: lip, channelDepthMm: ov, wallMm: wall });
+    const r = B.build(p), m = r.meta;
+    ['left', 'right', 'collar'].forEach(h => assert.strictEqual(edgeErrors(r.groups[h]), 0, `M ${name}: ${h} watertight`));
+    assert.ok(signedVolume(r.groups.left) > 0 && signedVolume(r.groups.right) > 0, `M ${name}: outward normals`);
+    approx(m.channel.lipMm, lip, 1e-9, `M ${name}: lip`); approx(m.channel.depthMm, ov, 1e-9, `M ${name}: overlap`);
+    approx(m.bottomSlot[0], lip, 1e-9, `M ${name}: bottom lip thickness`);
+    approx(m.depthMm - m.topSlot[1], lip, 1e-9, `M ${name}: top lip thickness`);
+    approx(m.channel.backLipTopZ - m.bottomSlot[1], lip, 1e-9, `M ${name}: back upper lip thickness`);
+    approx(m.topSlot[0] - m.channel.topLowerLipZ, lip, 1e-9, `M ${name}: top lower lip thickness`);
+    const sh = B.shapeOf(p), y = p.lowerPos * sh.L, inner = B.halfWidth(sh, y) - wall;
+    [m.bottomSlot[0] - 0.1, m.bottomSlot[1] + 0.1, m.topSlot[0] - 0.1, m.topSlot[1] + 0.1].forEach(z => {
+      assert.ok(B.solidAt(r, 'left', -(inner - ov + 0.3), y, z) && !B.solidAt(r, 'left', -(inner - ov - 0.3), y, z), `M ${name}: lip reaches ${ov} mm at z=${z.toFixed(2)}`);
+    });
+    const o = m.overhang;
+    assert.ok(o.stairLedgeMm <= 1.0 && o.channelRoofLedgeMm >= ov - 0.1 && o.channelRoofLedgeMm <= ov * Math.SQRT2 + 0.1, `M ${name}: only the flat lip undersides overhang (${JSON.stringify(o)})`);
+    const w = r.warnings;
+    if (ov > 5) assert.ok(w.some(x => /droops/.test(x)), `M ${name}: wide lip warns`);
+    else if (ov - p.panelEdgeGapMm < 2.5) assert.ok(w.some(x => /held/.test(x)), `M ${name}: short overlap warns`);
+    else assert.ok(!w.some(x => /droops|held|fragile/.test(x)), `M ${name}: no channel warnings (${w})`);
+  });
+  const fr = B.build(Object.assign(B.styleParams('parlor'), { lipMm: 1.2, channelDepthMm: 2.5 }));
+  assert.ok(fr.warnings.some(x => /fragile/.test(x)) && fr.warnings.some(x => /held/.test(x)), 'M: thin lip and short overlap warn');
+  console.log('Body M ok: lip thickness / overlap settings (1.6-3 mm lips, 2.5-6 mm overlap, 2-6 mm walls) watertight, square flat lips, warnings past the limits');
 }
 
 console.log('\nALL BODY TESTS PASSED');

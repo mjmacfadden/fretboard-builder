@@ -14,7 +14,7 @@
   // Controls whose id is the parameter name.
   var NUM_FIELDS = ['lengthIn', 'lowerWidthIn', 'waistWidthIn', 'upperWidthIn', 'widthIn', 'cornerRadiusIn',
     'depthIn', 'lowerPos', 'waistPos', 'upperPos', 'wallMm', 'panelThicknessMm', 'panelFitMm',
-    'channelDepthMm', 'channelRoofFlatMm', 'innerLipMm', 'panelEdgeGapMm', 'topLipMm', 'bottomLipMm', 'pocketLengthIn', 'pocketWidthIn',
+    'channelDepthMm', 'lipMm', 'channelSagMm', 'panelEdgeGapMm', 'pocketLengthIn', 'pocketWidthIn',
     'pocketDepthIn', 'pocketFitMm', 'neckBlockSideMm', 'neckBlockEndMm', 'baseBlockMm',
     'tailBlockLengthMm', 'tailBlockWidthMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
     'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm', 'collarClearanceMm', 'collarNutFloorMm'];
@@ -127,8 +127,8 @@
       ' mm (with the pocket notch), back ' + m.panels.back.sizeMm[1].toFixed(1) + ' × ' + m.panels.back.sizeMm[0].toFixed(1) + ' mm';
     var ch = m.channel;
     $('channel-out').textContent = fmtMm(ch.heightMm) + ' tall; lips reach ' + fmtMm(ch.depthMm) + ' over each panel edge on both faces (' +
-      fmtMm(ch.engagementMm) + ' of panel held); lips ' + p.bottomLipMm + ' / ' + p.innerLipMm + ' / ' + p.innerLipMm + ' / ' + p.topLipMm +
-      ' mm thick at the edge; rim ' + fmtMm(ch.topRimMm) + ' above the top panel';
+      fmtMm(ch.engagementMm) + ' of panel held); flat ' + fmtMm(ch.lipMm) + ' lips, no chamfer; ' + fmtMm(ch.sagMm) +
+      ' sag allowance under the flat lip undersides; back panel held on all four sides (side walls and both end-slab faces)';
     $('pocket-out').textContent = (m.pocket.lengthMm / IN).toFixed(2) + '″ long × ' + (m.pocket.widthMm / IN).toFixed(3) +
       '″ wide, floor ' + (m.pocket.depthMm / IN).toFixed(2) + '″ below the top of the top panel; ' +
       fmtMm(m.plasticUnderPocketMm) + ' of solid block under the floor';
@@ -157,7 +157,7 @@
         'Close the body, then glue the cap down onto the ' + cp.side + ' half\'s ' + fmtMm(cp.wallSeatMm) + ' wall top and the top panel. Prints top face down.'
       : '';
     $('overhang-out').textContent = 'no supports needed — 45° staircases (steps of ' + B.STEP_MM + ' mm, widest ' +
-      m.overhang.stairLedgeMm.toFixed(1) + ' mm) plus the ' + ch.roofFlatMm.toFixed(1) + ' mm flat channel roofs';
+      m.overhang.stairLedgeMm.toFixed(1) + ' mm) plus the ' + ch.depthMm.toFixed(1) + ' mm flat lip undersides (bridge cooling on)';
 
     var warnEl = $('warnings');
     warnEl.hidden = !w.length;

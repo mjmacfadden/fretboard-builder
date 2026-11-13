@@ -145,19 +145,26 @@ fretboard page) — same panels, preview and offline behaviour.
   A top/bottom split wouldn't work (each half would be a closed loop the
   panels can't get into), and a front/back split puts the joints at the
   waist where you can't reach the bolts.
-- **Panel channels**: each panel edge sits in a channel formed by an
-  inward flange ring at that panel's level (the outside of the rim stays a
-  plain 3 mm wall, 2 mm minimum). Lips reach 7.5 mm in over the panel on **both** faces,
-  the panel is cut 0.5 mm short of the channel back, so 7 mm of every edge
-  is held; the channel is panel + 0.4 mm tall. Lips are 3 mm thick at their
-  edge. Printed back face down, every lip is a corbel: the lip under a panel
-  has a flat bearing top and a 45° staircase underneath; the lip over a
-  panel has a 3 mm flat roof next to the wall (the one intended unsupported
-  ledge — short enough to print clean as an overhang, and the 0.4 mm
-  clearance takes up any sag), then climbs at 45° to its edge, so the rim
-  is 7.5 mm thick above the top panel. Inside the neck and tail blocks the
-  block tops carry the top panel instead of a lip. The second half still
-  closes sideways over the panels (and the neck collar).
+- **Panel channels**: each panel edge sits in a channel with a **flat
+  2 mm lip on each face** of the panel (no chamfers), reaching **4 mm** in
+  over it; the panel is cut 0.5 mm short of the channel back, so 3.5 mm of
+  every edge is held. The outside of the rim stays a plain 3 mm wall
+  (2 mm minimum). Lip thickness (default 2 mm) and lip overlap (default
+  4 mm) are set on the page. The back panel's channel runs round its whole
+  edge: along both side walls and straight across the faces of the tail
+  and neck end slabs, where the lips continue on the block faces, so it is
+  held on all four sides with no gap. It can't follow the outer wall round
+  the tail and neck ends instead: the halves close sideways, so any ply
+  beside a block at the same position along the body would have to pass
+  through that block. Inside the neck and tail blocks the block tops carry
+  the top panel instead of a lip. The second half still closes sideways
+  over the panels (and the neck collar).
+  **Bridge sag:** printed back face down, the underside of three lips (both
+  lips of the top channel and the upper lip of the back channel) is a flat
+  4 mm ledge off the wall with nothing under it. Every channel is
+  0.3 mm taller than panel + 0.4 mm fit (3.875 mm for ⅛″ ply), so a little
+  droop on those ledges doesn't pinch the panel. Turn on bridge / overhang
+  cooling. Lip overlaps past about 5 mm get a droop warning.
 - **Neck pocket**: 3″ long × 1.5″ wide (+0.15 mm each side), floor 0.9″
   below the top surface of the top panel. The pocket sits in a **solid neck
   block** (19 mm walls each side and past the end of the pocket) that runs
@@ -224,7 +231,7 @@ fretboard page) — same panels, preview and offline behaviour.
 - **Downloads**: an STL for each half, the neck collar STL, the cutaway cap STL (T-Style), and the top and back panel outlines
   as 1:1 SVG (mm, with a 100 mm check bar) or DXF.
 
-Print each half back face down in PETG (or ASA), 7 perimeters (the 3 mm wall prints fully solid), 6 top and
+Print each half back face down in PETG (or ASA), with bridge/overhang cooling on for the flat 4 mm lip undersides, 7 perimeters (the 3 mm wall prints fully solid), 6 top and
 bottom layers, 30–40% gyroid, and use a slicer modifier for 80–100% infill
 in the neck and tail blocks.
 

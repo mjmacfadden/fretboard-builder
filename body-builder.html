@@ -168,20 +168,16 @@
         <span class="row"><input type="number" id="wallMm" value="3" min="2" max="12" step="0.5"><span class="unit">mm</span></span></label>
       <label>Panel thickness <span class="hint">(⅛″ ply = 3.175 mm; measure yours)</span>
         <span class="row"><input type="number" id="panelThicknessMm" value="3.175" min="1.5" max="6.5" step="0.025"><span class="unit">mm</span></span></label>
-      <label>Channel clearance <span class="hint">(channel height minus panel thickness)</span>
+      <label>Channel clearance <span class="hint">(slide-in fit over the panel thickness)</span>
         <span class="row"><input type="number" id="panelFitMm" value="0.4" min="0" max="1" step="0.05"><span class="unit">mm</span></span></label>
-      <label>Channel depth <span class="hint">(how far the lips reach in over each panel edge)</span>
-        <span class="row"><input type="number" id="channelDepthMm" value="7.5" min="3" max="12" step="0.5"><span class="unit">mm</span></span></label>
-      <label>Flat part of each channel roof <span class="hint">(unsupported when printing; 45° beyond it)</span>
-        <span class="row"><input type="number" id="channelRoofFlatMm" value="3" min="0" max="5" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Sag allowance <span class="hint">(extra channel height for the flat lip undersides to droop into)</span>
+        <span class="row"><input type="number" id="channelSagMm" value="0.3" min="0" max="1" step="0.05"><span class="unit">mm</span></span></label>
+      <label>Lip overlap <span class="hint">(channel depth: how far each flat lip reaches in over the panel)</span>
+        <span class="row"><input type="number" id="channelDepthMm" value="4" min="2.5" max="8" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Lip thickness <span class="hint">(every lip, flat, no chamfer)</span>
+        <span class="row"><input type="number" id="lipMm" value="2" min="1.2" max="5" step="0.1"><span class="unit">mm</span></span></label>
       <label>Panel edge gap <span class="hint">(panels are cut this much short of the channel back)</span>
         <span class="row"><input type="number" id="panelEdgeGapMm" value="0.5" min="0" max="1.5" step="0.1"><span class="unit">mm</span></span></label>
-      <label>Top lip <span class="hint">(over the top panel, at its edge)</span>
-        <span class="row"><input type="number" id="topLipMm" value="3" min="1.5" max="8" step="0.1"><span class="unit">mm</span></span></label>
-      <label>Inner lips <span class="hint">(under the top panel and over the back panel, at the edge)</span>
-        <span class="row"><input type="number" id="innerLipMm" value="3" min="1.5" max="8" step="0.1"><span class="unit">mm</span></span></label>
-      <label>Bottom lip <span class="hint">(under the back panel, on the bed)</span>
-        <span class="row"><input type="number" id="bottomLipMm" value="3" min="1.2" max="8" step="0.1"><span class="unit">mm</span></span></label>
 
       <h3>Neck pocket and blocks</h3>
       <label>Pocket length
@@ -281,7 +277,7 @@
     <details class="notes" open>
       <summary>Printing and assembly</summary>
       <ul>
-        <li>Print each half <strong>back face down</strong> (the flat side that was on the bed is the back). No supports: every overhang is a 45° staircase except the roof of each panel channel, a 3 mm flat ledge next to the wall (turn on your slicer's overhang-perimeter / bridge cooling; any sag is taken up by the 0.4 mm channel clearance).</li>
+        <li>Print each half <strong>back face down</strong> (the flat side that was on the bed is the back). No supports: every overhang is a 45° staircase except the underside of three channel lips (both lips of the top channel and the upper lip of the back channel). Those are flat ledges as wide as the lip overlap (4 mm by default) off the wall with nothing under them, so turn on your slicer's bridge / overhang cooling. Each channel is the sag allowance (0.3 mm by default) taller than panel + fit, so a little droop won't pinch the panel.</li>
         <li>Neck collar (split neck block): print it <strong>flat underside down</strong> — the STL is already the right way up. It carries the pocket's side and end walls; the pocket floor stays part of the halves, so the neck screws clamp only solid lower block.</li>
         <li>Material: <strong>PETG</strong> (or ASA) — it creeps less than PLA under constant string and screw load. 0.2 mm layers.</li>
         <li><strong>7 walls / perimeters</strong> (0.4 mm nozzle, ~0.45 mm lines): the 3 mm rim wall and the channel lips print fully solid. 6 top and bottom layers; 30–40% gyroid only where the flanges are wider than that.</li>

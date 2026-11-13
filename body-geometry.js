@@ -75,15 +75,13 @@
     depthIn: 3.25,           // rim height = overall body depth
     wallMm: 3.0,             // plain rim wall thickness (outside to inside face); the channel flanges add to it at each panel level
     panelThicknessMm: 3.175, // 1/8" plywood
-    panelFitMm: 0.4,         // extra channel height over the panel thickness (0.1 of it absorbs roof sag)
-    // Panel channels: an inward flange ring at each panel level, with a lip
-    // on each face of the panel (see build()).
-    channelDepthMm: 7.5,     // lip reach inward from the channel back (panel engages this minus the edge gap)
-    channelRoofFlatMm: 3.0,  // flat (unsupported) part of each channel roof next to the wall; 45 deg beyond
-    innerLipMm: 3.0,         // thickness at the edge of the two lips on the inside of the body
+    panelFitMm: 0.4,         // extra channel height over the panel thickness (slide-in fit)
+    // Panel channels: a flat lip on each face of each panel, reaching in
+    // from the channel back (see build()).
+    channelDepthMm: 4.0,     // lip overlap: how far each lip reaches over the panel edge
+    lipMm: 2.0,              // thickness of every channel lip (flat, no chamfer)
+    channelSagMm: 0.3,       // extra channel height so the flat lip undersides can droop a little
     panelEdgeGapMm: 0.5,     // gap left at the back of the channel (panel is cut this much smaller)
-    topLipMm: 3.0,           // thickness of the top channel's upper lip at its edge
-    bottomLipMm: 3.0,        // thickness of the back channel's lower lip (on the bed)
     pocketLengthIn: 3.0,
     pocketWidthIn: 1.5,
     pocketDepthIn: 0.9,      // pocket floor below the top surface of the top panel
@@ -829,14 +827,15 @@
     var L = sh.L, Dreq = p.depthIn * IN;
     var bolt = BOLTS[p.boltSize] || BOLTS.M4;
     var t = p.panelThicknessMm, fit = p.panelFitMm, ec = p.panelEdgeGapMm;
-    var cD = Math.max(1, p.channelDepthMm), cA = clamp(p.channelRoofFlatMm, 0, cD), lipIn = p.innerLipMm;
-    var topRim = (cD - cA) + p.topLipMm;                 // rim above the top panel's channel
+    var cD = Math.max(1, p.channelDepthMm), lip = Math.max(0.6, p.lipMm), lipIn = lip;
+    var hC = t + fit + Math.max(0, p.channelSagMm);      // channel height
+    var topRim = lip;                                    // rim above the top panel's channel
 
     // Minimum depth: the pocket floor needs at least FLOOR_MIN mm of block
     // under it and must stay 3 mm above the teardrop of the neck bolt that
     // runs under the pocket; the middle zone needs 5 mm between the end
     // slabs and the top track. Shallower requests are raised to it.
-    var baseTop0 = Math.max(p.baseBlockMm, p.bottomLipMm + t + fit + (cD - cA) + lipIn + 0.4);
+    var baseTop0 = Math.max(p.baseBlockMm, lip + hC + lip + 0.4);
     var collarOn = !!p.neckCollar && p.neckCollar !== 'false';
     if (collarOn && p.neckBolts >= 2) {
       warnings.push('With the neck collar, only one sideways neck bolt fits (the rear one would cross the collar bolts); using 1.');
@@ -844,7 +843,7 @@
     }
     if (!collarOn && p.neckBolts < 1) warnings.push('No neck collar and no neck bolt: only the neck screws and back plate hold the halves together at the neck. Turn the collar on or add a neck bolt.');
     var floorReq = Math.max(FLOOR_MIN, p.neckBolts >= 1 ? baseTop0 / 2 + (BOLTS[p.boltSize] || BOLTS.M4).holeMm / 2 * Math.SQRT2 + 3 : 0);
-    var Dmin = Math.max(floorReq + p.pocketDepthIn * IN + topRim + fit, baseTop0 + lipIn + cD + t + fit + topRim);
+    var Dmin = Math.max(floorReq + p.pocketDepthIn * IN + topRim + hC - t, baseTop0 + 5 + lipIn + hC + topRim);
     var D = Math.max(Dreq, Dmin);
     if (Dreq < Dmin - 1e-9) {
       warnings.push('Body depth raised to the minimum ' + (Dmin / IN).toFixed(2) + '″ (' + Dmin.toFixed(1) + ' mm): the ' +
@@ -861,10 +860,10 @@
     var maxHw = Math.max(maxR, maxL);
 
     // heights
-    var zBL = p.bottomLipMm, zBS = zBL + t + fit;          // back panel channel
-    var zBU = zBS + (cD - cA) + lipIn;                     // top of the back channel's upper lip
-    var zTS1 = D - topRim, zTS0 = zTS1 - t - fit;          // top panel channel
-    var zTA = zTS0 - lipIn - cD;                           // foot of the top channel's lower-lip corbel
+    var zBL = lip, zBS = zBL + hC;                         // back panel channel
+    var zBU = zBS + lipIn;                                 // top of the back channel's upper lip
+    var zTS1 = D - topRim, zTS0 = zTS1 - hC;               // top panel channel
+    var zTA = zTS0 - lipIn;                                // underside of the top channel's lower lip
     var panelTopZ = zTS0 + t;                              // top surface of the top panel
     var zF = panelTopZ - p.pocketDepthIn * IN;             // pocket floor
     var baseTop = Math.max(p.baseBlockMm, zBU + 0.4);
@@ -951,14 +950,15 @@
     // features: { z0, z1, void }
     var F = [];
     function addF(z0, z1, v) { if (z1 - z0 > 1e-6 && v.length) F.push({ z0: z0, z1: z1, v: v }); }
-    // Panel channels. Each panel edge sits in a channel formed by an
-    // inward flange ring: the channel back is the old opening (the wall's
-    // inside face; the block faces for the back panel), and a lip reaches
-    // cD inward on each face of the panel. Printed back face down, every
-    // lip is a corbel: the lip under a panel is flat on top with a 45-degree
-    // staircase underneath; the lip over a panel has a flat roof only cA
-    // wide next to the wall (a short unsupported ledge), then climbs at 45
-    // degrees to the lip edge. void(r) = the opening with the lips reaching r.
+    // Panel channels. Each panel edge sits in a channel whose back is the
+    // wall's inside face (for the back panel, also the faces of the neck and
+    // tail end slabs, so the back panel is held on all four sides), with a
+    // flat lip of thickness lip on each face of the panel, reaching cD in
+    // over it. No chamfers: printed back face down, the underside of each
+    // lip above a gap (both lips of the top channel, the upper lip of the
+    // back channel) is a flat cD-wide ledge off the wall, and the channel
+    // is channelSagMm taller than panel + fit so a little droop is fine.
+    // void(r) = the opening with the lips reaching r.
     var memo = {};
     function shrink(base, key, r) {
       r = Math.round(r * 1000) / 1000;
@@ -966,34 +966,20 @@
       if (!memo[k2]) memo[k2] = r > 0 ? P(offset(base, -r)) : base;
       return memo[k2];
     }
-    // roof over a panel: flat cA, then 45 degrees up to the full reach
-    function roof(base, key, z0, sub) {
-      var zr = z0 + (cD - cA);
-      gridBands(z0, zr).forEach(function (band) {
-        var v = shrink(base, key, cA + (band[0] - z0));
-        addF(band[0], band[1], sub ? diff(v, sub) : v);
-      });
-      return zr;
-    }
-    // base zone: bottom lip on the bed, channel, roof, inner lip, slab
+    // base zone: bottom lip on the bed, channel, upper lip, end slabs
     addF(0, zBL, shrink(cavB, 'B', cD));
     addF(zBL, zBS, cavB);
-    var zr0 = roof(cavB, 'B', zBS);
-    addF(zr0, zBU, shrink(cavB, 'B', cD));
+    addF(zBS, zBU, shrink(cavB, 'B', cD));
     addF(zBU, baseTop, cavB);
     // middle zone
     var blocks = union(K, Kt, Kw);
     addF(baseTop, zTA, cavM);
-    // under the top panel: 45-degree corbel, then the flat inner lip
-    // (none inside the neck and tail blocks, whose tops carry the panel)
-    gridBands(zTA, zTS0 - lipIn).forEach(function (band) {
-      addF(band[0], band[1], diff(shrink(I, 'I', Math.min(cD, band[1] - zTA)), blocks));
-    });
-    addF(zTS0 - lipIn, zTS0, diff(shrink(I, 'I', cD), blocks));
-    // top channel, its roof and the top lip
+    // the flat lip under the top panel (none inside the neck and tail
+    // blocks, whose tops carry the panel)
+    addF(zTA, zTS0, diff(shrink(I, 'I', cD), blocks));
+    // top channel and the top lip
     addF(zTS0, zTS1, I);
-    var zr1 = roof(I, 'I', zTS1);
-    addF(zr1, D, shrink(I, 'I', cD));
+    addF(zTS1, D, shrink(I, 'I', cD));
     // neck pocket
     addF(zF, D, pocket);
 
@@ -1220,11 +1206,11 @@
     var left = meshSlabs(levels, leftRegions);
     var right = meshSlabs(levels, rightRegions);
 
-    // ---- overhang audit: downward faces above the bed. The two channel
-    // roofs are the only intended flat ledges (cA wide); everything else
-    // is a 45-degree staircase.
+    // ---- overhang audit: downward faces above the bed. The flat lip
+    // undersides are the only intended flat ledges (cD wide); everything
+    // else is a 45-degree staircase.
     var maxLedge = 0, downArea = 0, roofLedge = 0;
-    var roofZ = [Math.round(zBS * S), Math.round(zTS1 * S)];
+    var roofZ = [Math.round(zBS * S), Math.round(zTA * S), Math.round(zTS1 * S)];
     function ledgeOf(dn) {
       // widest ledge: grow an inward offset until the region vanishes
       var w = 0;
@@ -1282,9 +1268,9 @@
     if (backLen < 60) warnings.push('The neck and tail blocks leave only ' + backLen.toFixed(0) + ' mm for the back panel; shorten the pocket or the blocks, or lengthen the body.');
     if (zTA < baseTop - 1e-6) warnings.push('The body is too shallow for the end slabs and the top channel; increase the depth.');
     if (sx + rs > pw2 - 2 || sy + rs > pl / 2 - 2) warnings.push('The neck screw pattern does not fit inside the neck pocket.');
-    if (cA > 4) warnings.push('A ' + cA.toFixed(1) + ' mm flat channel roof is a long unsupported ledge; 3 mm (4 mm at most) prints cleanly.');
-    if (cD - ec < 4) warnings.push('Only ' + (cD - ec).toFixed(1) + ' mm of each panel edge is held; a channel of 7 mm or more holds the panels firmly.');
-    if (Math.min(lipIn, p.topLipMm, p.bottomLipMm) < 2) warnings.push('Channel lips under 2 mm thick are fragile; use 3 mm.');
+    if (cD > 5) warnings.push('Each channel lip is a flat ' + cD.toFixed(1) + ' mm ledge with nothing under it while printing; past about 5 mm it droops. 4 mm is the default.');
+    if (cD - ec < 2.5) warnings.push('Only ' + (cD - ec).toFixed(1) + ' mm of each panel edge is held; a lip overlap of 4 mm (3.5 mm held) or more holds the panels firmly.');
+    if (lip < 1.6) warnings.push('Channel lips under 1.6 mm thick are fragile; 2 mm is the default.');
 
     // screws: plate mode = through the whole block; wells = through the floor
     var wellsUsed = p.neckScrewMode === 'wells' && wellTop > 0;
@@ -1328,8 +1314,8 @@
         topZ: [zTS0, zTS0 + t], backZ: [zBL, zBL + t]
       },
       overhang: { downFacingAreaMm2: downArea, widestLedgeMm: Math.max(maxLedge, roofLedge), stairLedgeMm: maxLedge, channelRoofLedgeMm: roofLedge },
-      channel: { depthMm: cD, engagementMm: cD - ec, roofFlatMm: cA, heightMm: t + fit, innerLipMm: lipIn, topLipMm: p.topLipMm,
-        bottomLipMm: p.bottomLipMm, topRimMm: topRim, topCorbelFootZ: zTA, backLipTopZ: zBU },
+      channel: { depthMm: cD, engagementMm: cD - ec, lipMm: lip, heightMm: hC, fitMm: fit, sagMm: hC - t - fit,
+        topRimMm: topRim, topLowerLipZ: zTA, backLipTopZ: zBU, backSlot: [zBL, zBS], topSlotZ: [zTS0, zTS1] },
       levels: levels.length, outline: outline,
       triangles: { left: left.length / 9, right: right.length / 9, collar: collar ? collar.length / 9 : 0, cap: cap ? cap.length / 9 : 0 }
     };
