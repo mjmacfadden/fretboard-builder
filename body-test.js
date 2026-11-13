@@ -356,11 +356,11 @@ function build(name, p) {
 // === Body G: clamshell bolts through the neck and tail blocks ============
 {
   // collar on by default: only the tail bolt runs sideways
-  assert.deepStrictEqual(build('parlor', B.styleParams('parlor')).meta.bolts.map(b => b.name), ['tail']);
+  assert.deepStrictEqual(build('parlor', B.styleParams('parlor')).meta.bolts.map(b => b.name), ['tail', 'tail (upper)']);
   const p = Object.assign(B.styleParams('parlor'), { neckBolts: 1 });
   const r = build('parlor-neckbolt', p);
   const m = r.meta;
-  assert.deepStrictEqual(m.bolts.map(b => b.name), ['neck', 'tail']);
+  assert.deepStrictEqual(m.bolts.map(b => b.name), ['neck', 'tail', 'tail (upper)']);
   const bolt = B.BOLTS[p.boltSize];
   m.bolts.forEach(b => {
     // clear hole right across both halves at the bolt centre
@@ -381,10 +381,21 @@ function build(name, p) {
   const rows = [...new Set(m.neckScrews.map(s => s.y.toFixed(3)))].map(Number);
   assert.ok(Math.min(...rows) < nb.yMm && nb.yMm < Math.max(...rows), 'G: neck bolt between the screw rows');
   assert.ok(nb.zMm + bolt.washerMm < m.pocketFloorZ, 'G: neck bolt well under the pocket floor');
+  // upper tail bolt: near the top of the tail block, right under the top
+  // channel, through a full-width web of solid block (no cavity to crush)
+  const up = m.bolts.find(b => b.name === 'tail (upper)'), lo = m.bolts.find(b => b.name === 'tail');
+  assert.ok(up.zMm > m.topSlot[0] - 12 && up.zMm + bolt.washerMm / 2 * Math.SQRT2 + 1.5 <= m.topSlot[0], 'G: upper tail bolt just under the top channel');
+  assert.ok(up.zMm - lo.zMm > 30, 'G: the two tail bolts clamp the bottom and the top of the seam');
+  for (let x = -(up.gripMm / 2 - 1); x < -0.5; x += 2) {
+    assert.ok(B.solidAt(r, 'left', x, up.yMm + bolt.holeMm / 2 + 0.6, up.zMm), `G: solid web beside the upper tail bolt at x=${x.toFixed(0)}`);
+  }
+  assert.ok(B.solidAt(r, 'left', -40, up.yMm, m.topSlot[0] - 0.5), 'G: tail block reaches the top channel');
+  const t1 = build('tail1', Object.assign(B.styleParams('parlor'), { tailBolts: 1 }));
+  assert.deepStrictEqual(t1.meta.bolts.map(b => b.name), ['tail'], 'G: tailBolts 1 = the low bolt only');
   // no tail bolt -> warning
   const nt = B.build(Object.assign(B.styleParams('cigar-box'), { tailBolts: 0 }));
   assert.ok(nt.warnings.some(w => /tail bolt/i.test(w)), 'G: warns without a tail bolt');
-  console.log('Body G ok: neck + tail bolts (' + p.boltSize + ') clear through both halves with teardrop tops and flat washer seats; grips',
+  console.log('Body G ok: neck + low and upper tail bolts (' + p.boltSize + ') clear through both halves with teardrop tops and flat washer seats; grips',
     m.bolts.map(b => b.gripMm.toFixed(0) + ' mm').join(' / '));
 }
 
@@ -436,9 +447,9 @@ function build(name, p) {
     const p = B.styleParams(pick(B.STYLE_KEYS));
     Object.assign(p, {
       lengthIn: Math.min(12.85, p.lengthIn * (0.85 + rnd() * 0.2)), depthIn: 2.4 + rnd() * 1.5,
-      wallMm: 5 + rnd() * 3, channelDepthMm: 5 + rnd() * 3, channelRoofFlatMm: 2 + rnd() * 2, panelThicknessMm: pick([3.175, 3, 4]),
+      wallMm: 2 + rnd() * 4, channelDepthMm: 5 + rnd() * 3, channelRoofFlatMm: 2 + rnd() * 2, panelThicknessMm: pick([3.175, 3, 4]),
       topLipMm: 2.5 + rnd() * 1.5, innerLipMm: 2.5 + rnd() * 1.5, neckScrewMode: pick(['plate', 'wells']), boltSize: pick(['M3', 'M4', '#6']),
-      neckBolts: pick([0, 1, 2]), pocketWidthIn: pick([1.375, 1.5, 1.625]),
+      neckBolts: pick([0, 1, 2]), tailBolts: pick([1, 2]), pocketWidthIn: pick([1.375, 1.5, 1.625]),
       neckCollar: rnd() < 0.7, collarFastener: pick(['nut', 'insert']), leftHanded: rnd() < 0.3
     });
     const r = B.build(p);
@@ -512,12 +523,40 @@ function build(name, p) {
   assert.ok(ci.boltLengthMm <= ci.boltMaxMm, 'K insert: bolt does not bottom out');
   // collar + 2 neck bolts: one is dropped with a warning (they would cross)
   const r2 = B.build(Object.assign(B.styleParams('parlor'), { neckBolts: 2 }));
-  assert.ok(r2.warnings.some(w => /only one sideways neck bolt/.test(w)) && r2.meta.bolts.length === 2, 'K: rear neck bolt dropped with the collar');
+  assert.ok(r2.warnings.some(w => /only one sideways neck bolt/.test(w)) && r2.meta.bolts.filter(b => b.name.startsWith('neck')).length === 1, 'K: rear neck bolt dropped with the collar');
   // neither collar nor neck bolt: warn
   const r0 = B.build(Object.assign(B.styleParams('parlor'), { neckCollar: false, neckBolts: 0 }));
   assert.ok(r0.warnings.some(w => /No neck collar and no neck bolt/.test(w)), 'K: warns with nothing tying the neck end');
   console.log('Body K ok: neck block split at the pocket floor; U-shaped collar bridges the halves with 4 vertical',
     build('parlor').meta.boltSize, 'bolts (' + build('parlor').meta.collar.boltLengthMm + ' mm), nut traps / heat-set inserts, pocket floor all solid lower block');
+}
+
+// === Body L: thin walls (2, 3 and 6 mm) ===================================
+{
+  assert.strictEqual(B.DEFAULTS.wallMm, 3, 'L: 3 mm default wall');
+  [2, 3, 6].forEach(wall => {
+    ['parlor', 't-style'].forEach(name => {
+      const p = Object.assign(B.styleParams(name), { wallMm: wall });
+      const r = build(name + '-wall' + wall, p);
+      const m = r.meta;
+      ['left', 'right', 'collar'].forEach(h => assert.strictEqual(edgeErrors(r.groups[h]), 0, `L ${name} ${wall} mm: ${h} watertight`));
+      assert.ok(m.overhang.stairLedgeMm <= 1.0 && m.overhang.channelRoofLedgeMm <= p.channelRoofFlatMm * Math.SQRT2 + 0.1, `L ${name} ${wall} mm: no supports (${JSON.stringify(m.overhang)})`);
+      assert.deepStrictEqual(r.warnings, [], `L ${name} ${wall} mm: no warnings`);
+      const sh = B.shapeOf(p), y = sh.c1, inner = B.halfWidth(sh, y, 'left') - wall;
+      // plain wall exactly `wall` thick between the channels, lips still reach cD in
+      const zMid = (m.channel.topCorbelFootZ + m.baseTopMm) / 2;
+      assert.ok(B.solidAt(r, 'left', -(inner + 0.2), y, zMid) && !B.solidAt(r, 'left', -(inner - 0.2), y, zMid), `L ${name} ${wall} mm: plain wall ${wall} mm`);
+      const zl = m.topSlot[0] - 0.2;
+      assert.ok(B.solidAt(r, 'left', -(inner - p.channelDepthMm + 0.3), y, zl) && !B.solidAt(r, 'left', -(inner - p.channelDepthMm - 0.3), y, zl), `L ${name} ${wall} mm: lip reach`);
+      // the collar still sits inside the rim with its clearance; blocks stay solid
+      assert.ok(B.solidAt(r, 'left', -5, m.lengthMm - m.pocket.lengthMm / 2, m.pocketFloorZ - 1), `L ${name} ${wall} mm: neck block solid`);
+      assert.ok(B.solidAt(r, 'left', -5, 15 + 6, m.topSlot[0] - 1), `L ${name} ${wall} mm: tail block solid`);
+      assert.ok(m.collar.bolts.length === 4, `L ${name} ${wall} mm: 4 collar bolts`);
+    });
+  });
+  const thin = B.build(Object.assign(B.styleParams('cigar-box'), { wallMm: 1.2 }));
+  assert.ok(thin.warnings.some(w => /Wall raised to the 2.0 mm minimum/.test(w)), 'L: walls under 2 mm are raised with a warning');
+  console.log('Body L ok: 2 / 3 / 6 mm walls watertight, support-free, channels and blocks intact; under 2 mm is raised to 2 mm');
 }
 
 console.log('\nALL BODY TESTS PASSED');

@@ -41,7 +41,12 @@
   var BIG = 2000 * S;    // "infinity" for half-planes and strips
   var STEP = 0.4;        // staircase step (mm) for every printed overhang
   var ARC_TOL = 0.03 * S;
-  var FLOOR_MIN = 15;    // mm of printed block kept under the neck pocket floor
+  var FLOOR_MIN = 15;
+  // Thinnest plain wall: 2 mm is five 0.4 mm perimeters. Behind each
+  // channel the wall alone joins the upper and lower lips, and a panel
+  // pried up levers on it over the 7 mm lip; thinner than this it cracks
+  // along a layer line.
+  var WALL_MIN = 2.0;    // mm of printed block kept under the neck pocket floor
 
   // Clearance holes / washers for the clamshell bolts.
   var BOLTS = {
@@ -68,7 +73,7 @@
     widthIn: 7.0,            // box and T-Style shapes
     cornerRadiusIn: 0.5,     // box shape only
     depthIn: 3.25,           // rim height = overall body depth
-    wallMm: 6.0,             // rim wall thickness (outside to inside face)
+    wallMm: 3.0,             // plain rim wall thickness (outside to inside face); the channel flanges add to it at each panel level
     panelThicknessMm: 3.175, // 1/8" plywood
     panelFitMm: 0.4,         // extra channel height over the panel thickness (0.1 of it absorbs roof sag)
     // Panel channels: an inward flange ring at each panel level, with a lip
@@ -98,7 +103,7 @@
     screwBiteMm: 19.0,       // thread length wanted in the wooden neck
     boltSize: 'M4',
     neckBolts: 0,            // sideways bolts through the neck block (0 with the neck collar)
-    tailBolts: 1,
+    tailBolts: 2,            // 1 = low bolt in the end slab; 2 = plus an upper bolt just under the top channel
     neckCollar: true,        // print the upper neck block (pocket walls) as its own part, bolted down vertically
     collarFastener: 'nut',   // 'nut' (hex nut traps, dropped in from the top) or 'insert' (heat-set inserts)
     collarClearanceMm: 0.25, // gap between the collar and the rim's inside wall
@@ -706,6 +711,10 @@
   function build(input) {
     var p = withDefaults(input);
     var warnings = [];
+    if (p.wallMm < WALL_MIN) {
+      warnings.push('Wall raised to the ' + WALL_MIN.toFixed(1) + ' mm minimum: thinner walls crack behind the panel channels.');
+      p.wallMm = WALL_MIN;
+    }
     var sh = shapeOf(p);
     var L = sh.L, Dreq = p.depthIn * IN;
     var bolt = BOLTS[p.boltSize] || BOLTS.M4;
@@ -756,7 +765,15 @@
     var boltYs = [];
     if (p.neckBolts >= 1) boltYs.push({ name: 'neck', y: L - pl / 2 });
     if (p.neckBolts >= 2) boltYs.push({ name: 'neck (rear)', y: L - bl + Math.max(9, rSpot + 4) });
-    if (p.tailBolts >= 1) boltYs.push({ name: 'tail', y: Math.max(rSpot + 3, tbl / 2) });
+    var tailY = Math.max(rSpot + 3, tbl / 2);
+    if (p.tailBolts >= 1) boltYs.push({ name: 'tail', y: tailY, z: boltZ });
+    // upper tail bolt: as high in the tail block as its spot face allows,
+    // so the top of the tail seam is clamped too
+    var zUp = zTS0 - rSpot * Math.SQRT2 - 2;
+    if (p.tailBolts >= 2) {
+      if (zUp - rSpot < boltZ + rSpot * Math.SQRT2 + 2) warnings.push('The body is too shallow for an upper tail bolt; only the low one was used.');
+      else boltYs.push({ name: 'tail (upper)', y: tailY, z: zUp });
+    }
     boltYs.forEach(function (b) {
       var minR = Infinity, minL = Infinity;
       for (var s2 = -1; s2 <= 1.0001; s2 += 0.05) {
@@ -765,13 +782,20 @@
       }
       b.xs = minR - 1.0;  // flat washer seats, just inside each wall
       b.xsL = minL - 1.0;
-      b.hole = teardropBands(rHole, boltZ);
-      b.spot = teardropBands(rSpot, boltZ);
+      if (b.z === undefined) b.z = boltZ;
+      b.hole = teardropBands(rHole, b.z);
+      b.spot = teardropBands(rSpot, b.z);
     });
 
     // lines that straight cuts will follow (see presplit)
     var SX = [0, pw2, -pw2, kw, -kw, tw, -tw].map(function (v) { return Math.round(v * S); });
-    var SY = [tbl, L - bl, L - pl];
+    // tail web: the whole tail end, full width, from y = 0 to just past the
+    // bolts (no thin cavity sliver against the curved tail wall), from the
+    // end slab up to the top channel, so the upper tail bolt clamps solid
+    // material from one washer seat to the other
+    var webH = rSpot + 3;
+    var web0 = -50, web1 = Math.min(tbl, tailY + webH);
+    var SY = [tbl, L - bl, L - pl, web0, web1];
     boltYs.forEach(function (b) {
       b.hole.concat(b.spot).forEach(function (band) { SY.push(b.y - band.half, b.y + band.half); });
     });
@@ -787,7 +811,8 @@
     var cavB = inter(I, strip);                            // under the base slabs
     var K = rect(-kw, L - bl, kw, L + 50);
     var Kt = rect(-tw, -50, tw, tbl);
-    var cavM = diff(I, union(K, Kt));                      // between the slabs and the top slot
+    var Kw = p.tailBolts >= 2 ? rect(-BIG / S, web0, BIG / S, web1) : [];
+    var cavM = diff(I, union(K, Kt, Kw));                  // between the slabs and the top slot
     var pocket = rect(-pw2, L - pl, pw2, L + 50);
 
     // features: { z0, z1, void }
@@ -824,7 +849,7 @@
     addF(zr0, zBU, shrink(cavB, 'B', cD));
     addF(zBU, baseTop, cavB);
     // middle zone
-    var blocks = union(K, Kt);
+    var blocks = union(K, Kt, Kw);
     addF(baseTop, zTA, cavM);
     // under the top panel: 45-degree corbel, then the flat inner lip
     // (none inside the neck and tail blocks, whose tops carry the panel)
@@ -1006,7 +1031,7 @@
       });
       var grip = b.xs + b.xsL;
       var len = grip + 2 * bolt.washerTMm + bolt.nutMm + 2;
-      boltInfo.push({ name: b.name, yMm: b.y, zMm: boltZ, gripMm: grip, minLengthMm: len });
+      boltInfo.push({ name: b.name, yMm: b.y, zMm: b.z, gripMm: grip, minLengthMm: len });
     });
 
     // ---- slab levels and regions
@@ -1107,7 +1132,7 @@
       halfHeightMm: D, fitsBed: L < bed && maxHw < bed, bedMm: bed,
       panelTopZ: panelTopZ, pocketFloorZ: zF, topSlot: [zTS0, zTS1], bottomSlot: [zBL, zBS],
       baseTopMm: baseTop, neckBlock: { lengthMm: bl, widthMm: 2 * kw, heightMm: zTS0 },
-      tailBlock: { lengthMm: tbl, widthMm: 2 * tw, heightMm: zTS0 },
+      tailBlock: { lengthMm: tbl, widthMm: 2 * tw, heightMm: zTS0, web: p.tailBolts >= 2 ? [0, web1] : null },
       pocket: { lengthMm: pl, widthMm: 2 * pw2, depthMm: panelTopZ - zF, floorZ: zF },
       plasticUnderPocketMm: plasticUnderPocket,
       neckScrews: screws.map(function (q) { return { x: q[0], y: q[1] }; }),
@@ -1219,7 +1244,7 @@
 
   var api = {
     IN: IN, DEFAULTS: DEFAULTS, STYLES: STYLES, STYLE_KEYS: STYLE_KEYS, STYLE_FIELDS: STYLE_FIELDS, BOLTS: BOLTS,
-    STEP_MM: STEP,
+    STEP_MM: STEP, WALL_MIN_MM: WALL_MIN,
     styleParams: styleParams, matchStyle: matchStyle, withDefaults: withDefaults,
     shapeOf: shapeOf, halfWidth: halfWidth, outlinePoints: outlinePoints,
     build: build, solidAt: solidAt, panelMesh: panelMesh, panelSVG: panelSVG, panelDXF: panelDXF,

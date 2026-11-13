@@ -32,7 +32,7 @@
     });
     SELECT_FIELDS.forEach(function (k) { p[k] = $(k).value; });
     p.neckBolts = Number(p.neckBolts);
-    p.tailBolts = $('tailBolts').checked ? 1 : 0;
+    p.tailBolts = Number($('tailBolts').value);
     p.neckCollar = $('neckCollar').checked;
     p.leftHanded = $('leftHanded').checked;
     var bed = parseFloat($('bedIn').value);

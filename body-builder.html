@@ -136,9 +136,13 @@
       </select>
     </label>
 
-    <label class="check">
-      <input type="checkbox" id="tailBolts" checked>
-      Bolt through the tail block <span class="hint">(recommended)</span>
+    <label>
+      Tail bolts (sideways, M4)
+      <select id="tailBolts">
+        <option value="2" selected>2: low + upper, clamps the whole tail seam (recommended)</option>
+        <option value="1">1: low bolt in the end slab only</option>
+        <option value="0">None</option>
+      </select>
     </label>
 
     <label>
@@ -161,7 +165,7 @@
 
       <h3>Rim and panel channels</h3>
       <label>Wall thickness
-        <span class="row"><input type="number" id="wallMm" value="6" min="4" max="12" step="0.5"><span class="unit">mm</span></span></label>
+        <span class="row"><input type="number" id="wallMm" value="3" min="2" max="12" step="0.5"><span class="unit">mm</span></span></label>
       <label>Panel thickness <span class="hint">(⅛″ ply = 3.175 mm; measure yours)</span>
         <span class="row"><input type="number" id="panelThicknessMm" value="3.175" min="1.5" max="6.5" step="0.025"><span class="unit">mm</span></span></label>
       <label>Channel clearance <span class="hint">(channel height minus panel thickness)</span>
@@ -276,10 +280,10 @@
         <li>Print each half <strong>back face down</strong> (the flat side that was on the bed is the back). No supports: every overhang is a 45° staircase except the roof of each panel channel, a 3 mm flat ledge next to the wall (turn on your slicer's overhang-perimeter / bridge cooling; any sag is taken up by the 0.4 mm channel clearance).</li>
         <li>Neck collar (split neck block): print it <strong>flat underside down</strong> — the STL is already the right way up. It carries the pocket's side and end walls; the pocket floor stays part of the halves, so the neck screws clamp only solid lower block.</li>
         <li>Material: <strong>PETG</strong> (or ASA) — it creeps less than PLA under constant string and screw load. 0.2 mm layers.</li>
-        <li><strong>6 walls / perimeters</strong> (0.4 mm nozzle ≈ 2.4 mm of solid shell each side), 6 top and bottom layers, 30–40% gyroid infill for the rim.</li>
+        <li><strong>7 walls / perimeters</strong> (0.4 mm nozzle, ~0.45 mm lines): the 3 mm rim wall and the channel lips print fully solid. 6 top and bottom layers; 30–40% gyroid only where the flanges are wider than that.</li>
         <li>Neck and tail blocks: use a slicer modifier (height-range or box modifier) for <strong>80–100% infill</strong> in the blocks — this is the material the neck screws and bolts clamp.</li>
         <li>Plywood: cut the panels from the SVG/DXF (1:1, millimetres; check the 100 mm bar after printing a paper copy). The top panel has the neck-pocket notch.</li>
-        <li>Assembly: lay one half on its outside. Drop the collar nuts into their traps, slide the collar into that half's neck end, and put that half's collar bolts in from the back face. Slide the back and top panels into its tracks, close the other half over them, add its collar bolts, then the tail bolt (washers both sides). Glue the panels into the tracks if you like — it isn't needed to hold them.</li>
+        <li>Assembly: lay one half on its outside. Drop the collar nuts into their traps, slide the collar into that half's neck end, and put that half's collar bolts in from the back face. Slide the back and top panels into its tracks, close the other half over them, add its collar bolts, then the two tail bolts (washers both sides). Glue the panels into the tracks if you like — it isn't needed to hold them.</li>
         <li>Neck: drill pilot holes in the neck through the body's holes, then screw on through the back plate. Snug, not cranked.</li>
       </ul>
     </details>

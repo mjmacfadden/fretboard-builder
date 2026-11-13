@@ -147,7 +147,7 @@ fretboard page) — same panels, preview and offline behaviour.
   waist where you can't reach the bolts.
 - **Panel channels**: each panel edge sits in a channel formed by an
   inward flange ring at that panel's level (the outside of the rim stays a
-  plain 6 mm wall). Lips reach 7.5 mm in over the panel on **both** faces,
+  plain 3 mm wall, 2 mm minimum). Lips reach 7.5 mm in over the panel on **both** faces,
   the panel is cut 0.5 mm short of the channel back, so 7 mm of every edge
   is held; the channel is panel + 0.4 mm tall. Lips are 3 mm thick at their
   edge. Printed back face down, every lip is a corbel: the lip under a panel
@@ -185,7 +185,14 @@ fretboard page) — same panels, preview and offline behaviour.
 - **Clamshell bolts** (M3, M4 or #6) run sideways through full-width end
   slabs at the bottom of the tail block (and, optionally, the neck block:
   one between the two rows of neck screws, or a second behind the pocket
-  when the neck collar is off). Holes are teardrop-shaped (print without support) with
+  when the neck collar is off). By default the tail gets two: the low one in
+  the end slab and an upper one just under the top-panel channel, so the
+  top of the tail seam can't spread. The tail block runs up to the top
+  channel, and the last 23 mm of the tail is solid block from wall to
+  wall up to that channel, so the upper bolt clamps solid
+  material from washer seat to washer seat, not an empty cavity. At the
+  neck end the top of the seam is held by the collar, which is bolted
+  down into both halves and spans the joint up to the top channel. Holes are teardrop-shaped (print without support) with
   a flat washer seat at each outside wall; they're long, so use threaded
   rod with nuts and washers or long bolts (the page shows the lengths).
   With both ends pinned, each C-half can't bulge at the waist without
@@ -199,7 +206,7 @@ fretboard page) — same panels, preview and offline behaviour.
 - **Downloads**: an STL for each half, the neck collar STL, and the top and back panel outlines
   as 1:1 SVG (mm, with a 100 mm check bar) or DXF.
 
-Print each half back face down in PETG (or ASA), 6 perimeters, 6 top and
+Print each half back face down in PETG (or ASA), 7 perimeters (the 3 mm wall prints fully solid), 6 top and
 bottom layers, 30–40% gyroid, and use a slicer modifier for 80–100% infill
 in the neck and tail blocks.
 
