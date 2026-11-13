@@ -145,10 +145,19 @@ fretboard page) — same panels, preview and offline behaviour.
   A top/bottom split wouldn't work (each half would be a closed loop the
   panels can't get into), and a front/back split puts the joints at the
   waist where you can't reach the bolts.
-- **Tracks**: panel thickness + 0.3 mm tall, 2.5 mm deep into a 6 mm wall;
-  the panels are cut 0.5 mm short of the bottom of the track, so 2 mm of
-  each panel edge is captured. The roof of every track is a 45° staircase
-  (0.4 mm steps), so nothing needs support.
+- **Panel channels**: each panel edge sits in a channel formed by an
+  inward flange ring at that panel's level (the outside of the rim stays a
+  plain 6 mm wall). Lips reach 7.5 mm in over the panel on **both** faces,
+  the panel is cut 0.5 mm short of the channel back, so 7 mm of every edge
+  is held; the channel is panel + 0.4 mm tall. Lips are 3 mm thick at their
+  edge. Printed back face down, every lip is a corbel: the lip under a panel
+  has a flat bearing top and a 45° staircase underneath; the lip over a
+  panel has a 3 mm flat roof next to the wall (the one intended unsupported
+  ledge — short enough to print clean as an overhang, and the 0.4 mm
+  clearance takes up any sag), then climbs at 45° to its edge, so the rim
+  is 7.5 mm thick above the top panel. Inside the neck and tail blocks the
+  block tops carry the top panel instead of a lip. The second half still
+  closes sideways over the panels (and the neck collar).
 - **Neck pocket**: 3″ long × 1.5″ wide (+0.15 mm each side), floor 0.9″
   below the top surface of the top panel. The pocket sits in a **solid neck
   block** (19 mm walls each side and past the end of the pocket) that runs
@@ -184,7 +193,7 @@ fretboard page) — same panels, preview and offline behaviour.
   tracks is optional.
 - **Body styles**: Parlor, Small dreadnought style, Round, Cigar-box
   style and T-Style (a single-cutaway slab, 12.5″ × 10″ × 1.75″ — the
-  published ~15.9″ × 12.75″ outline scaled to the bed; left-handed
+  published ~15.9″ × 12.75″ outline scaled to the bed, 1.85″ deep — the channels need 1.80″ minimum; left-handed
   option mirrors the cutaway) presets; editing any shape field switches to Custom. Everything is
   checked against the print bed (12.9″ by default) and warned in the page.
 - **Downloads**: an STL for each half, the neck collar STL, and the top and back panel outlines

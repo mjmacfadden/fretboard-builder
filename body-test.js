@@ -177,36 +177,51 @@ function build(name, p) {
   console.log('Body C ok:', Object.keys(cases).length, 'configurations, halves and neck collar closed and consistently wound, mirrored (or per-side for T-Style), flat on the bed');
 }
 
-// === Body D: panel tracks ================================================
+// === Body D: panel channels ==============================================
+// Each panel edge sits in a channel: an inward flange ring with a solid lip
+// on each face of the panel. r = distance in from the channel back (the
+// inside face of the wall), measured at the widest point of the lower bout.
 {
   const p = B.styleParams('parlor');
   const r = build('parlor', p);
-  const m = r.meta;
-  const D = m.depthMm, t = p.panelThicknessMm, fit = p.panelFitMm, g = p.grooveDepthMm;
-  approx(m.topSlot[1] - m.topSlot[0], t + fit, 1e-9, 'D: top slot height = panel + clearance');
-  approx(D - m.topSlot[1], p.topLipMm, 1e-9, 'D: top lip');
-  approx(m.bottomSlot[0], p.bottomLipMm, 1e-9, 'D: bottom lip');
-  approx(m.bottomSlot[1] - m.bottomSlot[0], t + fit, 1e-9, 'D: bottom slot height');
-  // at the widest point of the lower bout, the wall inside face is at
-  // hw - wall; the track goes g further into the wall
+  const m = r.meta, ch = m.channel;
+  const D = m.depthMm, t = p.panelThicknessMm, fit = p.panelFitMm;
+  const cD = p.channelDepthMm, cA = p.channelRoofFlatMm, ec = p.panelEdgeGapMm;
+  approx(m.topSlot[1] - m.topSlot[0], t + fit, 1e-9, 'D: top channel height = panel + clearance');
+  approx(m.bottomSlot[1] - m.bottomSlot[0], t + fit, 1e-9, 'D: back channel height');
+  approx(m.bottomSlot[0], p.bottomLipMm, 1e-9, 'D: bottom lip under the back panel');
+  approx(D - m.topSlot[1], (cD - cA) + p.topLipMm, 1e-9, 'D: rim above the top channel = 45deg climb + top lip');
+  approx(ch.engagementMm, cD - ec, 1e-9, 'D: engagement');
+  assert.ok(ch.engagementMm >= 6 && ch.engagementMm <= 8, 'D: 6-8 mm of each panel edge held');
   const sh = B.shapeOf(p);
-  const y = p.lowerPos * sh.L, hw = B.halfWidth(sh, y);
-  const inner = hw - p.wallMm;
-  const zTop = (m.topSlot[0] + m.topSlot[1]) / 2, zBot = (m.bottomSlot[0] + m.bottomSlot[1]) / 2;
-  [['top', zTop], ['back', zBot]].forEach(([name, z]) => {
-    assert.ok(!B.solidAt(r, 'left', -(inner + g - 0.2), y, z), `D ${name}: track ${g} mm into the wall is open`);
-    assert.ok(B.solidAt(r, 'left', -(inner + g + 0.2), y, z), `D ${name}: wall behind the track is solid`);
-    assert.ok(!B.solidAt(r, 'right', inner + g - 0.2, y, z), `D ${name}: right track open`);
+  const y = p.lowerPos * sh.L, inner = B.halfWidth(sh, y) - p.wallMm;
+  const X = (rr) => -(inner - rr);            // left half, rr mm in from the channel back
+  const S = (rr, z) => B.solidAt(r, 'left', X(rr), y, z);
+  const R = (rr, z) => B.solidAt(r, 'right', inner - rr, y, z);
+  [['top', m.topSlot], ['back', m.bottomSlot]].forEach(([name, sl]) => {
+    const z = (sl[0] + sl[1]) / 2;
+    assert.ok(S(-0.3, z), `D ${name}: wall solid behind the channel`);
+    assert.ok(!S(0.3, z) && !S(cD + 1, z) && !R(0.3, z), `D ${name}: channel open from the wall inwards`);
+    // bearing lips just below and just above the panel, the full reach
+    assert.ok(S(0.3, sl[0] - 0.2) && S(cD - 0.3, sl[0] - 0.2) && !S(cD + 0.3, sl[0] - 0.2), `D ${name}: lip under the panel reaches ${cD} mm`);
+    assert.ok(R(cD - 0.3, sl[0] - 0.2), `D ${name}: right half lip under the panel`);
+    // the roof: flat for cA next to the wall, then 45 degrees
+    assert.ok(S(cA - 0.3, sl[1] + 0.1) && !S(cA + 0.3, sl[1] + 0.1), `D ${name}: flat roof ${cA} mm wide`);
+    assert.ok(S(cD - 0.3, sl[1] + (cD - cA) + 0.2), `D ${name}: roof climbs to the full reach`);
   });
-  // lips above / below the tracks are solid wall all the way to the inside face
-  assert.ok(B.solidAt(r, 'left', -(inner + 0.2), y, D - 0.3), 'D: top lip solid');
-  assert.ok(!B.solidAt(r, 'left', -(inner - 0.2), y, D - 0.3), 'D: inside of the top lip is open');
-  assert.ok(B.solidAt(r, 'left', -(inner + 0.2), y, p.bottomLipMm - 0.3), 'D: bottom lip solid');
-  // 45-degree staircase roof above each track: 1 step up, the track is one step shallower
-  const step = B.STEP_MM;
-  assert.ok(!B.solidAt(r, 'left', -(inner + g - step - 0.1), y, m.topSlot[1] + step / 2), 'D: roof step 1 open');
-  assert.ok(B.solidAt(r, 'left', -(inner + g - step + 0.1), y, m.topSlot[1] + step / 2), 'D: roof step 1 closes in by one step');
-  console.log('Body D ok: top and back tracks', (t + fit).toFixed(3), 'mm tall,', g, 'mm deep, with 45deg stepped roofs');
+  // lip thicknesses at the lip edge
+  assert.ok(S(cD - 0.3, 0.2) && S(cD - 0.3, p.bottomLipMm - 0.2), 'D: back panel bottom lip solid to its edge, on the bed');
+  assert.ok(S(cD - 0.3, ch.backLipTopZ - 0.2) && S(cD - 0.3, ch.backLipTopZ - p.innerLipMm + 0.2) && !S(cD - 0.3, ch.backLipTopZ + 0.2), 'D: back channel upper lip ' + p.innerLipMm + ' mm thick at its edge');
+  assert.ok(S(cD - 0.3, m.topSlot[0] - p.innerLipMm + 0.2), 'D: top channel lower lip ' + p.innerLipMm + ' mm thick at its edge');
+  assert.ok(S(cD - 0.3, D - 0.2) && S(cD - 0.3, D - p.topLipMm + 0.2), 'D: top lip ' + p.topLipMm + ' mm thick at its edge');
+  // under the top channel's lower lip: a 45-degree corbel back to the wall
+  const zMidC = ch.topCorbelFootZ + cD / 2;
+  assert.ok(S(cD / 2 - 0.7, zMidC) && !S(cD / 2 + 0.7, zMidC), 'D: 45deg corbel under the top channel lip');
+  assert.ok(!S(0.3, ch.topCorbelFootZ - 0.3), 'D: plain wall below the corbel');
+  // the outside of the rim is untouched (a clean wall face)
+  for (let z = 0.2; z < D; z += 1) assert.ok(S(-p.wallMm + 0.3, z), `D: outer wall solid at z=${z.toFixed(1)}`);
+  console.log('Body D ok: channels', (t + fit).toFixed(3), 'mm tall,', cD, 'mm lips on both faces (', ch.engagementMm, 'mm of panel held ), flat roof', cA, 'mm then 45deg, lips',
+    p.bottomLipMm + '/' + p.innerLipMm + '/' + p.innerLipMm + '/' + p.topLipMm, 'mm');
 }
 
 // === Body E: panels slide in sideways and sit in the tracks ==============
@@ -253,13 +268,15 @@ function build(name, p) {
     // the horizontal and the true (normal) track depth are the same
     const yMid = sh.kind === 'box' ? sh.L / 2 : sh.c1;
     const toI = pp => pp.map(q => ({ X: Math.round(q[0] * 1000), Y: Math.round(q[1] * 1000) }));
-    const engage = p.grooveDepthMm - p.panelEdgeGapMm - 0.3;
+    const inP = (which, x) => m.panels[which].outline.some(pp => ClipperLib.Clipper.PointInPolygon({ X: Math.round(x * 1000), Y: Math.round(yMid * 1000) }, toI(pp)) !== 0);
     ['top', 'back'].forEach(which => {
       [-1, 1].forEach(side => {
         const innerHalf = B.halfWidth(sh, yMid, side > 0 ? 'right' : 'left') - p.wallMm;
-        const pt = { X: Math.round(side * (innerHalf + engage) * 1000), Y: Math.round(yMid * 1000) };
-        assert.ok(m.panels[which].outline.some(pp => ClipperLib.Clipper.PointInPolygon(pt, toI(pp)) !== 0),
-          `E ${name}: ${which} panel reaches ${engage.toFixed(1)} mm past the inside of the wall`);
+        // the panel runs under the whole lip (past its edge at cD) to
+        // within the edge gap of the channel back
+        assert.ok(inP(which, side * (innerHalf - p.channelDepthMm - 1)) && inP(which, side * (innerHalf - p.panelEdgeGapMm - 0.1)),
+          `E ${name}: ${which} panel reaches ${(p.channelDepthMm - p.panelEdgeGapMm).toFixed(1)} mm under the lips`);
+        assert.ok(!inP(which, side * (innerHalf - p.panelEdgeGapMm + 0.1)), `E ${name}: ${which} panel stops ${p.panelEdgeGapMm} mm short of the channel back`);
       });
     });
   });
@@ -375,7 +392,11 @@ function build(name, p) {
 {
   B.STYLE_KEYS.forEach(k => {
     const r = build(k, B.styleParams(k));
-    assert.ok(r.meta.overhang.widestLedgeMm <= 1.0, `H ${k}: overhang ledge ${r.meta.overhang.widestLedgeMm} mm`);
+    const o = r.meta.overhang, cA = B.DEFAULTS.channelRoofFlatMm;
+    assert.ok(o.stairLedgeMm <= 1.0, `H ${k}: staircase ledge ${o.stairLedgeMm} mm`);
+    // the channel roofs: cA wide on straight runs, a little more measured
+    // into inside corners, where the ledge is held on two sides
+    assert.ok(o.channelRoofLedgeMm >= cA - 0.1 && o.channelRoofLedgeMm <= cA * Math.SQRT2 + 0.1, `H ${k}: channel roof ledge ${o.channelRoofLedgeMm} mm`);
     assert.deepStrictEqual(r.warnings, [], `H ${k}: preset builds without warnings`);
     assert.ok(r.meta.fitsBed, `H ${k}: fits the bed`);
   });
@@ -383,7 +404,7 @@ function build(name, p) {
   assert.ok(!long.meta.fitsBed && long.warnings.some(w => /print bed/.test(w)), 'H: 13.2in body warns about the bed');
   const shallow = B.build(Object.assign(B.styleParams('round'), { depthIn: 1.6 }));
   assert.ok(shallow.warnings.length > 0, 'H: very shallow body warns');
-  console.log('Body H ok: every overhang <= 1 mm (45deg staircases), presets warning-free, bed and depth checks warn');
+  console.log('Body H ok: overhangs are 45deg staircases (<= 1 mm) plus the 3 mm flat channel roofs; presets warning-free, bed and depth checks warn');
 }
 
 // === Body I: SVG / DXF / STL output ======================================
@@ -415,15 +436,15 @@ function build(name, p) {
     const p = B.styleParams(pick(B.STYLE_KEYS));
     Object.assign(p, {
       lengthIn: Math.min(12.85, p.lengthIn * (0.85 + rnd() * 0.2)), depthIn: 2.4 + rnd() * 1.5,
-      wallMm: 5 + rnd() * 3, grooveDepthMm: 1.5 + rnd() * 2, panelThicknessMm: pick([3.175, 3, 4]),
-      topLipMm: 4 + rnd() * 2, neckScrewMode: pick(['plate', 'wells']), boltSize: pick(['M3', 'M4', '#6']),
+      wallMm: 5 + rnd() * 3, channelDepthMm: 5 + rnd() * 3, channelRoofFlatMm: 2 + rnd() * 2, panelThicknessMm: pick([3.175, 3, 4]),
+      topLipMm: 2.5 + rnd() * 1.5, innerLipMm: 2.5 + rnd() * 1.5, neckScrewMode: pick(['plate', 'wells']), boltSize: pick(['M3', 'M4', '#6']),
       neckBolts: pick([0, 1, 2]), pocketWidthIn: pick([1.375, 1.5, 1.625]),
       neckCollar: rnd() < 0.7, collarFastener: pick(['nut', 'insert']), leftHanded: rnd() < 0.3
     });
     const r = B.build(p);
     assert.strictEqual(edgeErrors(r.groups.left) + edgeErrors(r.groups.right), 0, `J ${n}: watertight ${JSON.stringify(p)}`);
     if (r.groups.collar) assert.strictEqual(edgeErrors(r.groups.collar), 0, `J ${n}: collar watertight ${JSON.stringify(p)}`);
-    assert.ok(r.meta.overhang.widestLedgeMm <= 1.0, `J ${n}: overhang ${r.meta.overhang.widestLedgeMm}`);
+    assert.ok(r.meta.overhang.stairLedgeMm <= 1.0 && r.meta.overhang.channelRoofLedgeMm <= p.channelRoofFlatMm * Math.SQRT2 + 0.1, `J ${n}: overhang ${JSON.stringify(r.meta.overhang)}`);
   }
   console.log('Body J ok:', N, 'random bodies watertight');
 }
@@ -487,7 +508,7 @@ function build(name, p) {
   const ci = ri.meta.collar, bi = ci.bolts[0], bolt = B.BOLTS.M4;
   assert.ok(!B.solidAt(ri, 'collar', bi.x + bolt.insertHoleMm / 2 - 0.2, bi.y, ci.bottomZ + 2), 'K insert: insert hole');
   assert.ok(B.solidAt(ri, 'collar', bi.x, bi.y, ci.topZ - 0.5), 'K insert: blind (closed at the top)');
-  assert.ok(ri.meta.overhang.widestLedgeMm <= 1.0, 'K insert: pointed roof prints without support');
+  assert.ok(ri.meta.overhang.stairLedgeMm <= 1.0, 'K insert: pointed roof prints without support');
   assert.ok(ci.boltLengthMm <= ci.boltMaxMm, 'K insert: bolt does not bottom out');
   // collar + 2 neck bolts: one is dropped with a warning (they would cross)
   const r2 = B.build(Object.assign(B.styleParams('parlor'), { neckBolts: 2 }));

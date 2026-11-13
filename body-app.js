@@ -14,7 +14,7 @@
   // Controls whose id is the parameter name.
   var NUM_FIELDS = ['lengthIn', 'lowerWidthIn', 'waistWidthIn', 'upperWidthIn', 'widthIn', 'cornerRadiusIn',
     'depthIn', 'lowerPos', 'waistPos', 'upperPos', 'wallMm', 'panelThicknessMm', 'panelFitMm',
-    'grooveDepthMm', 'panelEdgeGapMm', 'topLipMm', 'bottomLipMm', 'pocketLengthIn', 'pocketWidthIn',
+    'channelDepthMm', 'channelRoofFlatMm', 'innerLipMm', 'panelEdgeGapMm', 'topLipMm', 'bottomLipMm', 'pocketLengthIn', 'pocketWidthIn',
     'pocketDepthIn', 'pocketFitMm', 'neckBlockSideMm', 'neckBlockEndMm', 'baseBlockMm',
     'tailBlockLengthMm', 'tailBlockWidthMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
     'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm', 'collarClearanceMm', 'collarNutFloorMm'];
@@ -122,6 +122,10 @@
         : 'does NOT fit the ' + fmtIn(m.bedMm) + ' bed (' + Math.abs(m.bedMm - m.lengthMm).toFixed(1) + ' mm too long)');
     $('panels-out').textContent = 'top ' + m.panels.top.sizeMm[1].toFixed(1) + ' × ' + m.panels.top.sizeMm[0].toFixed(1) +
       ' mm (with the pocket notch), back ' + m.panels.back.sizeMm[1].toFixed(1) + ' × ' + m.panels.back.sizeMm[0].toFixed(1) + ' mm';
+    var ch = m.channel;
+    $('channel-out').textContent = fmtMm(ch.heightMm) + ' tall; lips reach ' + fmtMm(ch.depthMm) + ' over each panel edge on both faces (' +
+      fmtMm(ch.engagementMm) + ' of panel held); lips ' + p.bottomLipMm + ' / ' + p.innerLipMm + ' / ' + p.innerLipMm + ' / ' + p.topLipMm +
+      ' mm thick at the edge; rim ' + fmtMm(ch.topRimMm) + ' above the top panel';
     $('pocket-out').textContent = (m.pocket.lengthMm / IN).toFixed(2) + '″ long × ' + (m.pocket.widthMm / IN).toFixed(3) +
       '″ wide, floor ' + (m.pocket.depthMm / IN).toFixed(2) + '″ below the top of the top panel; ' +
       fmtMm(m.plasticUnderPocketMm) + ' of solid block under the floor';
@@ -141,8 +145,8 @@
         (c.footprintMm[0] / IN).toFixed(2) + '″ × ' + (c.footprintMm[1] / IN).toFixed(2) + '″ × ' + fmtMm(c.heightMm) +
         ', split at the pocket floor. ' + c.boltNote
       : 'off — the neck block is part of each half';
-    $('overhang-out').textContent = 'no supports needed — widest unsupported ledge ' + m.overhang.widestLedgeMm.toFixed(1) +
-      ' mm (45° staircase steps of ' + B.STEP_MM + ' mm)';
+    $('overhang-out').textContent = 'no supports needed — 45° staircases (steps of ' + B.STEP_MM + ' mm, widest ' +
+      m.overhang.stairLedgeMm.toFixed(1) + ' mm) plus the ' + ch.roofFlatMm.toFixed(1) + ' mm flat channel roofs';
 
     var warnEl = $('warnings');
     warnEl.hidden = !w.length;
