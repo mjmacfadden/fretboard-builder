@@ -34,7 +34,7 @@
   <p class="tagline">
     A small guitar body for 3- and 4-string necks, printed as <strong>one piece</strong>: a rim and a solid back floor,
     printed floor down with the open side up. A <strong>⅛″ plywood</strong> top drops into the rim and glues onto a
-    shelf that runs round the inside. The neck screws into a solid, integral neck block. Optional access panel in the back.
+    shelf that runs round the inside. The neck screws into an integral, ribbed neck block. Optional access panel in the back.
   </p>
   <p class="page-links"><a href="index.html">← Fretboard Builder</a></p>
 </header>
@@ -151,16 +151,26 @@
       <h3>Neck pocket and block <span class="hint">(true size, never scaled)</span></h3>
       <label>Pocket length
         <span class="row"><input type="number" id="pocketLengthIn" value="2.75" min="1.5" max="4" step="0.05"><span class="unit">in</span></span></label>
-      <label>Pocket width <span class="hint">(square 90° corners)</span>
+      <label>Pocket width
         <span class="row"><input type="number" id="pocketWidthIn" value="1.5" min="1" max="2.5" step="0.0625"><span class="unit">in</span></span></label>
       <label>Pocket depth <span class="hint">(floor below the top surface of the top)</span>
         <span class="row"><input type="number" id="pocketDepthIn" value="0.9" min="0.4" max="1.5" step="0.05"><span class="unit">in</span></span></label>
       <label>Pocket fit <span class="hint">(added to each side of the width)</span>
         <span class="row"><input type="number" id="pocketFitMm" value="0.15" min="0" max="1" step="0.05"><span class="unit">mm</span></span></label>
-      <label>Neck block each side of the pocket
-        <span class="row"><input type="number" id="neckBlockSideMm" value="19" min="8" max="40" step="1"><span class="unit">mm</span></span></label>
-      <label>Neck block past the pocket
-        <span class="row"><input type="number" id="neckBlockEndMm" value="19" min="8" max="40" step="1"><span class="unit">mm</span></span></label>
+      <label>Pocket corner radius <span class="hint">(¼″ = 6.35 mm; 0 = square)</span>
+        <span class="row"><input type="number" id="pocketCornerMm" value="6.35" min="0" max="12" step="0.05"><span class="unit">mm</span></span></label>
+      <label>Pocket wall <span class="hint">(shell round the pocket, 2 mm minimum)</span>
+        <span class="row"><input type="number" id="pocketWallMm" value="6" min="2" max="20" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Plate under the pocket floor
+        <span class="row"><input type="number" id="pocketFloorMm" value="6" min="2" max="20" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Ribs, gussets and ties
+        <span class="row"><input type="number" id="ribMm" value="3" min="2" max="10" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Screw boss wall <span class="hint">(round each neck screw hole)</span>
+        <span class="row"><input type="number" id="bossWallMm" value="3" min="2" max="10" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Gussets behind the pocket <span class="hint">(length; 0 = none)</span>
+        <span class="row"><input type="number" id="gussetLengthMm" value="20" min="0" max="60" step="1"><span class="unit">mm</span></span></label>
+      <label>Side ties to the rim <span class="hint">(height above the floor)</span>
+        <span class="row"><input type="number" id="tieHeightMm" value="20" min="5" max="80" step="1"><span class="unit">mm</span></span></label>
 
       <h3>Neck screws</h3>
       <label>Hole spacing across the neck
@@ -262,7 +272,7 @@
         <li>Print the body <strong>back face down</strong>, open side up, as one part. No supports: the walls and the neck block go straight up, and the underside of the glue shelf is a 45° staircase (0.4 mm steps). With screw wells on, the flat round roof of each well is a short bridge.</li>
         <li>Material: <strong>PETG</strong> (or ASA) — it creeps less than PLA under string and screw load. 0.2 mm layers.</li>
         <li><strong>7 walls / perimeters</strong> (0.4 mm nozzle): the 3 mm rim and the shelf print fully solid. 6 top and bottom layers, so the 3 mm back floor is solid too.</li>
-        <li>Neck block: it is solid in the model; use a slicer modifier for <strong>40–100% infill</strong> there (more round the screw holes) — the neck screws clamp it.</li>
+        <li>Neck block: a ribbed shell (pocket walls, gussets, ties, a plate under the pocket and screw bosses), so <strong>normal infill (15–25%)</strong> is fine — the 7 perimeters make its walls solid. The cells under the pocket are sealed and close at 45°, no supports.</li>
         <li>Top: cut the ⅛″ ply from the top panel SVG/DXF (1:1, millimetres; check the 100 mm bar on a paper print first). It drops into the rim and sits on the shelf; the notch fits round the neck pocket. Glue it to the shelf and the top of the neck block (wood glue or epoxy), weighted flat.</li>
         <li>Neck: drill pilot holes in the neck through the body's holes, then screw on from the back (through the back plate, or with washers / ferrules in the wells). Snug, not cranked.</li>
         <li>Access panel (if on): print the cover plate face down (the STL is the right way up). It drops into the bevelled recess flush with the back and is held by small screws into the ring round the opening.</li>

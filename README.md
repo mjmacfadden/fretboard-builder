@@ -148,10 +148,30 @@ the fretboard builder.
   glue surface after the 0.3 mm top fit), has a 1.6 mm straight edge, and
   its underside is a **45° taper** back to the wall (0.4 mm staircase
   steps), so it prints without supports.
-- **Integral neck block**: solid from the floor up to the shelf (the top is
-  glued to it too), 19 mm of block each side of and behind the pocket.
+- **Integral neck block, a ribbed shell** rather than a solid lump:
+  - **6 mm pocket walls** (sides and inner end) from the back floor up to
+    the shelf, so the top is glued to them too;
+  - **three 20 mm gussets** (3 mm) behind the pocket's inner end: one on
+    the centreline and one on each outer corner;
+  - **low ties** (3 mm thick, 20 mm high) from each side wall out to the
+    rim, one where the corner round meets the side and one mid-pocket.
+    Where the rim comes within 4 mm of the wall (the T-Style treble side,
+    about 10 mm) that gap is filled solid instead;
+  - under the pocket, a **6 mm solid plate** below the pocket floor. Beneath
+    it, a centreline rib and a cross rib (3 mm) and a **boss round each
+    neck screw hole** (3 mm wall: 10.6 mm across for the plate holes) run
+    down to the back floor. The four cells between them are sealed and
+    their roofs close in 45° staircases, so there are no bridges and no
+    supports.
+  - All of these are adjustable, with a 2 mm minimum. Each neck screw
+    clamps back plate, back floor, boss, plate and neck in one straight
+    line.
+  - Parlor body: about 579 cm³ of plastic (847 cm³ with the old solid
+    block).
+  - T-Style: about 492 cm³ (574 cm³ before).
 - **Neck pocket**: **2.75″ long × 1.5″ wide** (+0.15 mm fit each side),
-  square 90° corners, floor **0.9″ below the top surface of the top**, open
+  **¼″ (6.35 mm) radius** inner corners (set 0 for square), floor **0.9″
+  below the top surface of the top**, open
   through the neck end. It is **never scaled**, whatever the outline.
 - **Neck screws**: four #8 wood screws up through the back floor and the
   block, either through a back plate on the back face (screw = plate +
@@ -182,14 +202,15 @@ the fretboard builder.
   (mm, with a 100 mm check bar) or DXF.
 
 Print in PETG (or ASA), 0.2 mm layers, 7 perimeters (the rim and shelf
-print fully solid), 6 top and bottom layers; give the neck block 40–100%
-infill with a slicer modifier. With screw wells on, the flat round roof of
+print fully solid), 6 top and bottom layers and normal infill (15–25%); the
+neck block is a ribbed shell, so it needs no infill modifier. With screw wells on, the flat round roof of
 each well is a short bridge — the only one. Glue the top to the shelf and
 the neck block, weighted flat.
 
 `node body-test.js` (also run by `node test.js`) checks every style with
-the access panel on and off and both screw modes: one watertight shell on
-the bed, the pocket size / corners / floor depth, the shelf drop, width and
+the access panel on and off and both screw modes: one watertight body on
+the bed (plus its sealed cells), the pocket size / corner radius / floor
+depth, the neck block's walls, ribs, bosses and cells, the shelf drop, width and
 45° taper, a slab-by-slab overhang audit (nothing more than one 0.4 mm step
 past the layer below, except the well roofs), the screw maths, the access
 recess and cover fit, bed scaling, the SVG / DXF output, and random shapes.

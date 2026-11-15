@@ -45,6 +45,31 @@ function signedVolume(t) {
   return v;
 }
 
+// signed volume of each separate shell (connected by shared vertices):
+// the body is one outer shell (+) plus one inner shell (-) per sealed
+// cell under the neck pocket
+function shellVolumes(t) {
+  const key = (i) => Math.round(t[i] * 1e4) + ',' + Math.round(t[i + 1] * 1e4) + ',' + Math.round(t[i + 2] * 1e4);
+  const parent = new Map();
+  const find = (k) => { while (parent.get(k) !== k) { parent.set(k, parent.get(parent.get(k))); k = parent.get(k); } return k; };
+  for (let i = 0; i < t.length; i += 9) {
+    const v = [key(i), key(i + 3), key(i + 6)];
+    v.forEach(k => { if (!parent.has(k)) parent.set(k, k); });
+    parent.set(find(v[1]), find(v[0])); parent.set(find(v[2]), find(v[0]));
+  }
+  const vol = new Map();
+  for (let i = 0; i < t.length; i += 9) {
+    const r = find(key(i));
+    const dv = (t[i] * (t[i + 4] * t[i + 8] - t[i + 5] * t[i + 7]) -
+                t[i + 1] * (t[i + 3] * t[i + 8] - t[i + 5] * t[i + 6]) +
+                t[i + 2] * (t[i + 3] * t[i + 7] - t[i + 4] * t[i + 6])) / 6;
+    vol.set(r, (vol.get(r) || 0) + dv);
+  }
+  return [...vol.values()];
+}
+function outerShells(t) { return shellVolumes(t).filter(v => v > 0).length; }
+function innerShells(t) { return shellVolumes(t).filter(v => v < 0).length; }
+
 // number of separate shells (connected by shared vertices)
 function shells(t) {
   const key = (i) => Math.round(t[i] * 1e4) + ',' + Math.round(t[i + 1] * 1e4) + ',' + Math.round(t[i + 2] * 1e4);
@@ -132,11 +157,15 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     assert.strictEqual(B.matchStyle(edited), 'custom', `A: editing ${k} -> custom`);
   });
   // the clamshell is gone: no halves, channels, lips, collars, bolts
-  ['channelDepthMm', 'lipMm', 'panelFitMm', 'neckCollar', 'neckBolts', 'tailBolts', 'boltSize', 'baseBlockMm', 'tailBlockLengthMm'].forEach(k =>
+  ['channelDepthMm', 'lipMm', 'panelFitMm', 'neckCollar', 'neckBolts', 'tailBolts', 'boltSize', 'baseBlockMm', 'tailBlockLengthMm', 'neckBlockSideMm', 'neckBlockEndMm'].forEach(k =>
     assert.ok(!(k in B.DEFAULTS), `A: obsolete clamshell parameter ${k} removed`));
   assert.strictEqual(B.DEFAULTS.pocketLengthIn, 2.75, 'A: pocket 2.75in long');
   assert.strictEqual(B.DEFAULTS.pocketWidthIn, 1.5, 'A: pocket 1.5in wide');
   assert.strictEqual(B.DEFAULTS.pocketDepthIn, 0.9, 'A: pocket floor 0.9in down');
+  assert.strictEqual(B.DEFAULTS.pocketCornerMm, 6.35, 'A: pocket corners 1/4in radius');
+  assert.strictEqual(B.DEFAULTS.pocketWallMm, 6, 'A: 6 mm pocket shell walls');
+  assert.strictEqual(B.DEFAULTS.neckScrewMode, 'plate', 'A: back plate (no wells) by default');
+  assert.strictEqual(B.DEFAULTS.bedMarginMm, 5, 'A: 5 mm bed margin');
   assert.strictEqual(B.DEFAULTS.wallMm, 3, 'A: 3 mm walls');
   assert.strictEqual(B.WALL_MIN_MM, 2, 'A: 2 mm minimum wall');
   // no brand or model names anywhere in the body builder's files
@@ -159,7 +188,9 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
         const r = build(`${k}-${acc}-${mode}`, P(k, { accessPanel: acc, neckScrewMode: mode }));
         const tag = `B: ${k} access=${acc} ${mode}`;
         assert.strictEqual(edgeErrors(r.body), 0, `${tag}: body watertight`);
-        assert.strictEqual(shells(r.body), 1, `${tag}: body is one piece`);
+        assert.strictEqual(outerShells(r.body), 1, `${tag}: body is one piece`);
+        const cells = r.meta.neckBlock.cells ? r.meta.neckBlock.cells.count : 0;
+        assert.strictEqual(innerShells(r.body), cells, `${tag}: the only other shells are the ${cells} sealed cells under the pocket`);
         assert.ok(signedVolume(r.body) > 0, `${tag}: outward normals`);
         const b = bounds(r.body);
         approx(b[2], 0, 1e-6, `${tag}: back face on the bed`);
@@ -179,7 +210,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   const right = build('t-style-false-plate');
   const bl = bounds(lefty.body), br = bounds(right.body);
   approx(bl[0], -br[3], 0.05, 'B: lefty mirrors the outline');
-  console.log(`Body B ok: ${n} builds + lefty, every body one watertight shell on the bed, covers watertight`);
+  console.log(`Body B ok: ${n} builds + lefty, every body one watertight piece on the bed (plus its sealed cells), covers watertight`);
 }
 
 // === Body C: bed fit, outline-only scaling ==================================
@@ -212,7 +243,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   console.log(`Body C ok: T-Style scaled ${(m.outlineScale * 100).toFixed(2)}% to ${(m.lengthMm / IN).toFixed(2)}in x ${(m.widthMm / IN).toFixed(2)}in (bed 12.9in - 5 mm), parlor unscaled, pocket/wall/shelf true size`);
 }
 
-// === Body D: neck pocket: 2.75 x 1.5in, square corners, floor 0.9in down ===
+// === Body D: neck pocket: 2.75 x 1.5in, 1/4in corners, floor 0.9in down ===
 {
   ['parlor', 't-style', 'cigar-box'].forEach(k => {
     const r = build(`${k}-false-plate`, P(k)), m = r.meta, L = m.L, pk = m.pocket;
@@ -220,9 +251,17 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     approx(zTop - pk.floorZ, 0.9 * IN, 1e-6, `D: ${k} floor 0.9in below the top surface`);
     approx(zTop, m.depthMm - B.DEFAULTS.shelfAllowanceMm, 1e-6, `D: ${k} top surface near flush`);
     const zm = (pk.floorZ + m.shelf.zTop) / 2;
-    // square corners: open right up to them, solid right past them
+    // 1/4in (6.35 mm) radius inner corners: solid in the corner itself,
+    // open just inside the arc, solid just outside it
+    approx(pk.cornerRadiusMm, 6.35, 1e-9, `D: ${k} corner radius 1/4in`);
+    const rc = pk.cornerRadiusMm, c45 = Math.SQRT1_2;
     [[-1, 1], [1, 1]].forEach(([sx]) => {
-      assert.ok(!solid(r, sx * (hw - 0.05), y0 + 0.05, zm), `D: ${k} pocket open at the inner corner`);
+      assert.ok(solid(r, sx * (hw - 0.5), y0 + 0.5, zm), `D: ${k} corner filled by the radius`);
+      const ax = hw - rc + rc * c45, ay = y0 + rc - rc * c45;
+      assert.ok(!solid(r, sx * (ax - 0.15), ay + 0.15, zm), `D: ${k} pocket open just inside the corner arc`);
+      assert.ok(solid(r, sx * (ax + 0.15), ay - 0.15, zm), `D: ${k} block just outside the corner arc`);
+      assert.ok(!solid(r, sx * (hw - 0.05), y0 + rc + 0.5, zm), `D: ${k} straight side starts where the arc ends`);
+      assert.ok(!solid(r, sx * (hw - rc - 0.5), y0 + 0.05, zm), `D: ${k} straight end wall starts where the arc ends`);
       assert.ok(solid(r, sx * (hw + 0.05), y0 - 0.05, zm), `D: ${k} block just past the inner corner`);
       assert.ok(solid(r, sx * (hw + 0.05), y0 + 10, zm), `D: ${k} pocket side wall`);
     });
@@ -230,7 +269,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     assert.ok(!solid(r, 0, L - 1, zm), `D: ${k} pocket open through the neck end`);
     assert.ok(solid(r, hw - 2, y0 + 5, pk.floorZ - 0.05), `D: ${k} pocket floor is solid block`);
     assert.ok(!solid(r, hw - 2, y0 + 5, pk.floorZ + 0.05), `D: ${k} open above the floor`);
-    // the neck block is integral: solid from the back up to the shelf
+    // the shell walls are integral: solid from the back up to the shelf
     assert.ok(solid(r, hw + 5, y0 - 5, 1) && solid(r, hw + 5, y0 - 5, m.shelf.zTop - 0.05), `D: ${k} block from floor to shelf`);
     assert.ok(!solid(r, hw + 5, y0 - 5, m.shelf.zTop + 0.05), `D: ${k} top panel sits on the block`);
   });
@@ -238,7 +277,10 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   const a = B.build(P('parlor', { lengthIn: 10 })).meta.pocket, b2 = B.build(P('parlor', { lengthIn: 16 })).meta.pocket;
   approx(a.lengthMm, b2.lengthMm, 1e-9, 'D: pocket length independent of the body');
   approx(a.widthMm, b2.widthMm, 1e-9, 'D: pocket width independent of the body');
-  console.log('Body D ok: pocket 2.75 x 1.5in, square corners, floor 0.9in below the top surface, through the neck end, integral block, never scaled');
+  // square corners still possible
+  const sq = B.build(P('parlor', { pocketCornerMm: 0 })), sm = sq.meta, sy0 = sm.L - sm.pocket.lengthMm, shw = sm.pocket.widthMm / 2;
+  assert.ok(!B.solidAt(sq, 'body', shw - 0.05, sy0 + 0.05, (sm.pocket.floorZ + sm.shelf.zTop) / 2) && edgeErrors(sq.body) === 0, 'D: radius 0 -> square corners');
+  console.log('Body D ok: pocket 2.75 x 1.5in, 1/4in radius corners, floor 0.9in below the top surface, through the neck end, integral walls, never scaled');
 }
 
 // === Body E: glue shelf: drop, width, 45-degree taper ======================
@@ -388,6 +430,47 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   console.log('Body J ok: wall / floor minimums, depth raised for the pocket, screw-hole warnings');
 }
 
+// === Body L: the neck block is a ribbed shell, not a solid lump ============
+{
+  B.STYLE_KEYS.forEach(k => {
+    const r = build(`${k}-false-plate`, P(k)), m = r.meta, nb = m.neckBlock, pk = m.pocket;
+    const hw = pk.widthMm / 2, y0 = pk.y0, L = m.L, yc = L - pk.lengthMm / 2, zm = (pk.floorZ + m.shelf.zTop) / 2;
+    assert.strictEqual(nb.footprintPieces, 1, `L: ${k} walls, gussets and ties are one connected piece`);
+    assert.ok(nb.pocketWallMm >= 2 && nb.ribMm >= 2 && nb.bossWallMm >= 2 && nb.pocketFloorMm >= 2, `L: ${k} every block wall at least 2 mm`);
+    // pocket walls tw thick, side and end, up to the shelf
+    const tw = nb.pocketWallMm;
+    assert.ok(solid(r, hw + tw - 0.2, yc + 5, zm) && solid(r, 0, y0 - tw + 0.2, zm), `L: ${k} ${tw} mm side and end walls`);
+    assert.ok(!solid(r, 0, y0 - tw - 0.2 - nb.gussetLengthMm - 1, zm), `L: ${k} hollow behind the gussets`);
+    if (!nb.filledSides.includes('right')) {
+      assert.ok(!solid(r, hw + tw + 0.3, yc + 5, zm), `L: ${k} hollow outside the side wall above the ties`);
+      assert.ok(solid(r, hw + tw + 1, yc, m.floorMm + 1), `L: ${k} low tie from the side wall towards the rim`);
+    }
+    // under the pocket: solid floor plate, then cells between ribs and screw bosses
+    const c = nb.cells;
+    assert.ok(c && c.count === 4, `L: ${k} four sealed cells under the pocket`);
+    assert.ok(solid(r, hw / 2, yc + 8, pk.floorZ - nb.pocketFloorMm + 0.2), `L: ${k} solid plate under the pocket floor`);
+    const zc = (c.bottomZ + c.roofStartZ) / 2;
+    assert.ok(!solid(r, hw / 2, yc + 8, zc) && !solid(r, -hw / 2, yc - 8, zc), `L: ${k} cells are hollow`);
+    assert.ok(solid(r, 0, yc + 8, zc) && solid(r, hw / 2, yc, zc), `L: ${k} centre rib and cross rib`);
+    m.neckScrews.holes.forEach(h => {
+      assert.ok(!solid(r, h.x, h.y, zc), `L: ${k} screw hole runs through its boss`);
+      const d = m.neckScrews.holeMm / 2 + nb.bossWallMm - 0.3;
+      assert.ok(solid(r, h.x, h.y + d, zc) && solid(r, h.x, h.y - d, zc), `L: ${k} ${nb.bossDiameterMm.toFixed(1)} mm boss round the hole`);
+    });
+    assert.ok(m.volume.neckBlockCm3 > 50 && m.volume.neckBlockCm3 < 200, `L: ${k} neck block ${m.volume.neckBlockCm3.toFixed(0)} cm3 (a solid block was 190-480)`);
+  });
+  const t = build('t-style-false-plate').meta.neckBlock, lefty = build('t-lefty').meta.neckBlock;
+  assert.deepStrictEqual(t.filledSides, ['right'], 'L: T-Style treble-side gap to the rim filled solid');
+  assert.deepStrictEqual(lefty.filledSides, ['left'], 'L: lefty T-Style fills the other side');
+  assert.deepStrictEqual(build('parlor-false-plate').meta.neckBlock.filledSides, [], 'L: parlor uses ties both sides');
+  const par = build('parlor-false-plate').meta.volume;
+  assert.ok(par.totalCm3 < 650, `L: parlor body ${par.totalCm3.toFixed(0)} cm3 (847 with the solid block)`);
+  const thin = B.build(P('parlor', { pocketWallMm: 1, ribMm: 1 }));
+  assert.ok(thin.meta.neckBlock.pocketWallMm === 2 && thin.meta.neckBlock.ribMm === 2 && thin.warnings.some(w => /thinner than 2 mm/.test(w)), 'L: block walls clamped to 2 mm');
+  assert.strictEqual(edgeErrors(thin.body), 0, 'L: thinnest shell watertight');
+  console.log(`Body L ok: ${build('parlor-false-plate').meta.neckBlock.pocketWallMm} mm shell walls, 3 gussets, ties or gap fill, ${build('parlor-false-plate').meta.neckBlock.bossDiameterMm.toFixed(1)} mm bosses, 4 sealed cells; parlor ${par.totalCm3.toFixed(0)} cm3 total`);
+}
+
 // === Body K: random shapes stay watertight ==================================
 {
   let seed = 20261113;
@@ -398,7 +481,8 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     const p = Object.assign(base, {
       lengthIn: base.lengthIn * (0.85 + rnd() * 0.3), depthIn: 1.4 + rnd() * 2.6, wallMm: 2 + rnd() * 4, floorMm: 2 + rnd() * 3,
       shelfWidthMm: 4 + rnd() * 6, shelfLipMm: 0.8 + rnd() * 2.5, shelfAllowanceMm: rnd() * 0.6,
-      pocketLengthIn: 2 + rnd() * 1.2, pocketWidthIn: 1.25 + rnd() * 0.6, neckBlockSideMm: 10 + rnd() * 20,
+      pocketLengthIn: 2 + rnd() * 1.2, pocketWidthIn: 1.25 + rnd() * 0.6, pocketCornerMm: rnd() * 10,
+      pocketWallMm: 2 + rnd() * 8, ribMm: 2 + rnd() * 3, pocketFloorMm: 2 + rnd() * 8, gussetLengthMm: rnd() * 30, tieHeightMm: 5 + rnd() * 30,
       neckScrewMode: rnd() < 0.5 ? 'plate' : 'wells', accessPanel: rnd() < 0.6, accessLengthMm: 60 + rnd() * 80, accessWidthMm: 40 + rnd() * 60,
       accessCornerMm: 5 + rnd() * 25, accessPos: 0.2 + rnd() * 0.3, coverThicknessMm: 2.5 + rnd() * 3, coverScrews: Math.floor(rnd() * 7),
       leftHanded: rnd() < 0.5
