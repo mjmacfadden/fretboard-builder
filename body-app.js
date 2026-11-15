@@ -13,16 +13,18 @@
 
   // Controls whose id is the parameter name.
   var NUM_FIELDS = ['lengthIn', 'lowerWidthIn', 'waistWidthIn', 'upperWidthIn', 'widthIn', 'cornerRadiusIn',
-    'depthIn', 'lowerPos', 'waistPos', 'upperPos', 'wallMm', 'panelThicknessMm', 'panelFitMm',
-    'channelDepthMm', 'lipMm', 'channelSagMm', 'panelEdgeGapMm', 'pocketLengthIn', 'pocketWidthIn',
-    'pocketDepthIn', 'pocketFitMm', 'neckBlockSideMm', 'neckBlockEndMm', 'baseBlockMm',
-    'tailBlockLengthMm', 'tailBlockWidthMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
-    'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm', 'collarClearanceMm', 'collarNutFloorMm'];
-  var SELECT_FIELDS = ['neckScrewMode', 'boltSize', 'neckBolts', 'collarFastener'];
+    'depthIn', 'lowerPos', 'waistPos', 'upperPos', 'wallMm', 'floorMm', 'panelThicknessMm', 'shelfAllowanceMm',
+    'shelfWidthMm', 'shelfLipMm', 'topFitMm', 'pocketLengthIn', 'pocketWidthIn', 'pocketDepthIn', 'pocketFitMm',
+    'neckBlockSideMm', 'neckBlockEndMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
+    'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm', 'accessLengthMm', 'accessWidthMm',
+    'accessCornerMm', 'accessPos', 'coverThicknessMm', 'coverFitMm', 'accessRingMm', 'accessRingHeightMm',
+    'coverScrews', 'coverScrewHoleMm', 'coverScrewClearMm', 'bedMarginMm'];
+  var SELECT_FIELDS = ['neckScrewMode'];
+  var CHECK_FIELDS = ['accessPanel', 'fitBed', 'leftHanded'];
 
   var styleEl = $('style');
   var shape = 'bouts';      // the current outline family (kept when you go Custom)
-  var result = null, preview = null, viewMode = 'rim', timer = null;
+  var result = null, preview = null, viewMode = 'body', timer = null;
 
   function readParams() {
     var p = { style: styleEl.value, shape: shape };
@@ -31,10 +33,7 @@
       p[k] = isFinite(v) ? v : B.DEFAULTS[k];
     });
     SELECT_FIELDS.forEach(function (k) { p[k] = $(k).value; });
-    p.neckBolts = Number(p.neckBolts);
-    p.tailBolts = Number($('tailBolts').value);
-    p.neckCollar = $('neckCollar').checked;
-    p.leftHanded = $('leftHanded').checked;
+    CHECK_FIELDS.forEach(function (k) { p[k] = $(k).checked; });
     var bed = parseFloat($('bedIn').value);
     p.bedMm = (isFinite(bed) ? bed : 12.9) * IN;
     return p;
@@ -46,8 +45,6 @@
     $('box-rows').hidden = shape !== 'box' && shape !== 'tstyle';
     $('corner-row').hidden = shape !== 'box';
     $('lefty-row').hidden = shape !== 'tstyle';
-    $('fastener-row').hidden = !$('neckCollar').checked;
-    $('collar-dl-row').hidden = !$('neckCollar').checked;
   }
 
   // Style presets fill in the shape fields (see BodyBuilder.STYLES);
@@ -77,26 +74,14 @@
   }
 
   function sceneLayers() {
-    var g = result.groups, m = result.meta;
-    var WOOD = [208, 170, 112], WOOD2 = [190, 152, 98], PLY = [232, 214, 170], PLY2 = [214, 196, 152];
-    var gap = viewMode === 'exploded' ? Math.max(40, m.widthMm * 0.25) : 0;
-    var layers = [
-      { tris: gap ? shifted(g.left, -gap, 0, 0) : g.left, color: WOOD },
-      { tris: gap ? shifted(g.right, gap, 0, 0) : g.right, color: WOOD2 }
-    ];
-    // the neck and tail blocks are separate parts standing on the back panel
-    if (g.neckBlock) layers.push({ tris: gap ? shifted(g.neckBlock, 0, gap * 0.6, 0) : g.neckBlock, color: [196, 150, 96] });
-    if (g.tailBlock) layers.push({ tris: gap ? shifted(g.tailBlock, 0, -gap * 0.6, 0) : g.tailBlock, color: [196, 150, 96] });
-    if (g.collar) layers.push({ tris: gap ? shifted(g.collar, 0, gap * 0.6, m.depthMm - m.collar.bottomZ + 30) : g.collar, color: [176, 132, 84] });
-    if (g.cap) layers.push({ tris: gap ? shifted(g.cap, (m.cap.side === 'right' ? 1 : -1) * gap, 0, 30) : g.cap, color: [150, 112, 70] });
-    if (viewMode !== 'rim') {
-      if (!result.panelTris) {
-        result.panelTris = {
-          top: B.panelMesh(m.panels.top.outline, m.panels.topZ[0], m.panels.topZ[1]),
-          back: B.panelMesh(m.panels.back.outline, m.panels.backZ[0], m.panels.backZ[1])
-        };
-      }
-      layers.push({ tris: result.panelTris.top, color: PLY }, { tris: result.panelTris.back, color: PLY2 });
+    var m = result.meta;
+    var WOOD = [208, 170, 112], PLY = [232, 214, 170], COVER = [120, 150, 190];
+    var ex = viewMode === 'exploded';
+    var layers = [{ tris: result.body, color: WOOD }];
+    if (result.cover) layers.push({ tris: ex ? shifted(result.cover, 0, 0, -Math.max(40, m.depthMm * 0.6)) : result.cover, color: COVER });
+    if (viewMode !== 'body') {
+      if (!result.topTris) result.topTris = B.panelMesh(m.topPanel.outline, m.topPanel.z0, m.topPanel.z1);
+      layers.push({ tris: ex ? shifted(result.topTris, 0, 0, Math.max(40, m.depthMm * 0.6)) : result.topTris, color: PLY });
     }
     return layers;
   }
@@ -118,75 +103,53 @@
     var m = result.meta, w = result.warnings.slice();
 
     $('size-out').textContent = fmtIn(m.lengthMm) + ' long × ' + fmtIn(m.widthMm) + ' wide × ' + fmtIn(m.depthMm) +
-      ' deep (' + m.lengthMm.toFixed(0) + ' × ' + m.widthMm.toFixed(0) + ' × ' + m.depthMm.toFixed(0) + ' mm)';
-    $('bed-out').textContent = fmtIn(m.halfFootprintMm[1]) + ' × ' + (m.symmetric ? fmtIn(m.halfFootprintMm[0])
-      : fmtIn(m.leftFootprintMm[0]) + ' (left) / ' + fmtIn(m.rightFootprintMm[0]) + ' (right)') + ' footprint, ' +
-      fmtIn(m.halfHeightMm) + ' tall — ' + (m.fitsBed
-        ? 'fits the ' + fmtIn(m.bedMm) + ' bed (' + (m.bedMm - m.lengthMm).toFixed(1) + ' mm to spare on length)'
-        : m.diagonalSquareMm && m.diagonalSquareMm <= m.bedMm - 2
-          ? 'too long to print straight on the ' + fmtIn(m.bedMm) + ' bed (' + (m.bedMm - m.lengthMm).toFixed(1) + ' mm to spare); turned corner to corner each half needs only a ' + fmtIn(m.diagonalSquareMm) + ' square'
-          : 'does NOT fit the ' + fmtIn(m.bedMm) + ' bed (' + Math.abs(m.bedMm - m.lengthMm).toFixed(1) + ' mm too long)');
-    $('panels-out').textContent = 'top ' + m.panels.top.sizeMm[1].toFixed(1) + ' × ' + m.panels.top.sizeMm[0].toFixed(1) +
-      ' mm (with the pocket notch), back ' + m.panels.back.sizeMm[1].toFixed(1) + ' × ' + m.panels.back.sizeMm[0].toFixed(1) + ' mm';
-    var ch = m.channel;
-    $('channel-out').textContent = fmtMm(ch.heightMm) + ' tall; lips reach ' + fmtMm(ch.depthMm) + ' over each panel edge on both faces (' +
-      fmtMm(ch.engagementMm) + ' of panel held); flat ' + fmtMm(ch.lipMm) + ' lips, no chamfer; ' + fmtMm(ch.sagMm) +
-      ' sag allowance under the flat lip undersides; the back channel runs round the whole outer wall, like the top one, and the back panel is one full-outline piece';
-    $('pocket-out').textContent = (m.pocket.lengthMm / IN).toFixed(2) + '″ long × ' + (m.pocket.widthMm / IN).toFixed(3) +
-      '″ wide, floor ' + (m.pocket.depthMm / IN).toFixed(2) + '″ below the top of the top panel; ' +
-      fmtMm(m.plasticUnderPocketMm) + ' of solid neck block under the floor';
-    var nb = m.neckBlock, tb = m.tailBlock;
-    $('blocks-out').textContent = 'separate parts standing on the back panel (undersides flush with the back channel\'s upper face, ' + fmtMm(nb.bottomZ) +
-      ' up): neck block ' + (nb.footprintMm[1] / IN).toFixed(2) + '″ × ' + (nb.footprintMm[0] / IN).toFixed(2) + '″ × ' + fmtMm(nb.heightMm) +
-      ', tail block ' + (tb.footprintMm[1] / IN).toFixed(2) + '″ × ' + (tb.footprintMm[0] / IN).toFixed(2) + '″ × ' + fmtMm(tb.heightMm) +
-      '. Each prints standing on its underside. The halves close in sideways round them; bosses behind the bolt washer seats slide into notches in the blocks.';
-    var holes = m.panels.back.holes || [];
-    $('backholes-out').textContent = holes.length ? holes.length + ' holes in the back panel: ' + holes.map(function (h) {
-      return h.what + ' ' + fmtMm(h.dMm) + ' at (' + h.x.toFixed(1) + ', ' + h.y.toFixed(1) + ') mm';
-    }).join('; ') + ' — included in the SVG / DXF' : 'none';
-    var bite = ' (' + m.neckScrewBiteMm.toFixed(0) + ' mm into the neck)';
-    var screwTxt = m.neckScrewWells
-      ? '4 × #8 wood screws, ' + m.neckScrewLengthIn + '″ long' + bite + ', with washers or ferrules in the wells'
-      : '4 × #8 wood screws, ' + m.neckScrewLengthIn + '″ long' + bite + ', through a back plate, the back panel and the neck block (' +
-        fmtMm(m.neckScrewStack.plateMm) + ' plate + ' + fmtMm(m.neckScrewStack.backPanelMm) + ' ply + ' + fmtMm(m.neckScrewStack.blockMm) + ' block)';
-    $('screws-out').textContent = screwTxt + ' (' + (p.neckScrewSpanXIn).toFixed(3) + '″ × ' + p.neckScrewSpanYIn.toFixed(3) + '″ hole pattern). ' + m.neckScrewNote;
-    $('bolts-out').textContent = m.bolts.length ? m.bolts.map(function (b) {
-      return b.name + ': ' + m.boltSize + ' × ' + Math.ceil(b.minLengthMm / 5) * 5 + ' mm+ (or threaded rod), clamps ' + b.gripMm.toFixed(0) + ' mm';
-    }).join('; ') + '. Washers both sides.' : 'none';
-    var c = m.collar;
-    $('collar-out').textContent = c
-      ? c.bolts.length + ' × ' + m.boltSize + ' × ' + c.boltLengthMm + ' mm bolts up from the back face' +
-        (c.wells ? ' (heads in counterbored wells)' : '') + ' into ' +
-        (c.fastener === 'insert' ? 'heat-set inserts' : 'hex nuts in traps') + '; collar ' +
-        (c.footprintMm[0] / IN).toFixed(2) + '″ × ' + (c.footprintMm[1] / IN).toFixed(2) + '″ × ' + fmtMm(c.heightMm) +
-        ', split at the pocket floor. ' + c.boltNote
-      : 'off — the neck block is part of each half';
-    var cp = m.cap;
-    $('cap-row').hidden = !cp;
-    $('cap-dl-row').hidden = !cp;
-    $('cap-out').textContent = cp
-      ? 'the cutaway\'s walls and top lip (' + (cp.footprintMm[0] / IN).toFixed(2) + '″ × ' + (cp.footprintMm[1] / IN).toFixed(2) + '″ × ' + fmtMm(cp.heightMm) +
-        ') are a separate part: the horn curls back past the neck, so the ' + cp.side + ' half could not close over the top panel with them on. ' +
-        'Close the body, then glue the cap down onto the ' + cp.side + ' half\'s ' + fmtMm(cp.wallSeatMm) + ' wall top and the top panel. Prints top face down.'
-      : '';
-    $('overhang-out').textContent = 'no supports needed — 45° staircases (steps of ' + B.STEP_MM + ' mm, widest ' +
-      m.overhang.stairLedgeMm.toFixed(1) + ' mm) plus the ' + ch.depthMm.toFixed(1) + ' mm flat lip undersides (bridge cooling on)';
+      ' deep (' + m.lengthMm.toFixed(1) + ' × ' + m.widthMm.toFixed(1) + ' × ' + m.depthMm.toFixed(1) + ' mm)';
+    $('bed-out').textContent = 'one piece, back face down; ' + (m.fitsBed
+      ? 'fits the ' + fmtIn(m.bedMm) + ' bed with the ' + m.bedMarginMm + ' mm margin' : 'does NOT fit the ' + fmtIn(m.bedMm) + ' bed') +
+      (m.scaled ? ' — outline scaled to ' + (m.outlineScale * 100).toFixed(1) + '% (from ' + fmtIn(m.naturalLengthMm) + ' × ' + fmtIn(m.naturalWidthMm) +
+        '); pocket, wall, floor, shelf and screw holes stay true size' : '');
+    var sh = m.shelf;
+    $('shelf-out').textContent = fmtMm(sh.widthMm) + ' wide (' + fmtMm(sh.glueWidthMm) + ' glue surface), ' + sh.dropMm.toFixed(2) +
+      ' mm below the rim edge (top ' + m.topPanel.thicknessMm.toFixed(2) + ' + ' + sh.allowanceMm.toFixed(2) + ' mm); ' + fmtMm(sh.lipMm) +
+      ' straight edge, then a 45° taper back to the wall (' + sh.steps + ' steps of ' + sh.stepMm.toFixed(2) + ' mm)';
+    var tp = m.topPanel;
+    $('top-out').textContent = tp.sizeMm[1].toFixed(1) + ' × ' + tp.sizeMm[0].toFixed(1) + ' mm with the pocket notch, ' +
+      fmtMm(tp.fitMm) + ' inside the rim; its face sits ' + tp.belowRimMm.toFixed(2) + ' mm below the rim edge';
+    var pk = m.pocket;
+    $('pocket-out').textContent = (pk.lengthMm / IN).toFixed(2) + '″ long × ' + (pk.widthMm / IN).toFixed(3) + '″ wide, square corners, floor ' +
+      (pk.depthMm / IN).toFixed(2) + '″ below the top surface (never scaled)';
+    var nb = m.neckBlock;
+    $('block-out').textContent = 'integral, solid from the back floor up to the shelf: ' + (nb.footprintMm[0] / IN).toFixed(2) + '″ × ' +
+      (nb.footprintMm[1] / IN).toFixed(2) + '″, ' + fmtMm(nb.plasticUnderPocketMm) + ' of floor and block under the pocket';
+    var ns = m.neckScrews, stk = ns.stack;
+    $('screws-out').textContent = '4 × #8 wood screws, ' + ns.lengthIn + '″ long (' + Math.round(stk.biteMm) + ' mm into the neck) ' +
+      (ns.wells ? 'with washers or ferrules in ' + ns.wellDiameterMm + ' mm wells (' + fmtMm(stk.washerMm) + ' washer + ' + fmtMm(stk.blockMm) + ' block)'
+        : 'through a back plate (' + fmtMm(stk.plateMm) + ' plate + ' + fmtMm(stk.blockMm) + ' floor and block)') +
+      '; ' + p.neckScrewSpanXIn.toFixed(3) + '″ × ' + p.neckScrewSpanYIn.toFixed(3) + '″ hole pattern. ' + ns.note;
+    var a = m.access;
+    $('access-out').textContent = a
+      ? 'opening ' + a.openingMm[0].toFixed(0) + ' × ' + a.openingMm[1].toFixed(0) + ' mm; recess ' + a.cover.sizeMm[0].toFixed(1) + ' × ' +
+        a.cover.sizeMm[1].toFixed(1) + ' mm at the back face, ' + fmtMm(a.recessDepthMm) + ' deep with a 45° bevel seat; cover ' +
+        fmtMm(a.cover.thicknessMm) + ' thick, ' + (a.screws.length ? a.screws.length + ' screws into the ring round the opening' : 'no screws')
+      : (p.accessPanel ? 'left out (see the warning)' : 'off — the back is solid');
+    $('overhang-out').textContent = 'no supports: vertical walls, 45° staircases (steps of ' + m.overhang.stairStepMm.toFixed(2) + ' mm or less)' +
+      (ns.wells ? ', plus the flat round roofs of the ' + ns.wellDiameterMm + ' mm wells (short bridges)' : '');
 
     var warnEl = $('warnings');
     warnEl.hidden = !w.length;
     warnEl.textContent = w.join(' ');
+    $('cover-dl-row').hidden = !result.cover;
+    $('cover-cut-row').hidden = !result.cover;
 
-    var base = 'body-' + (p.style === 'custom' ? 'custom' : p.style) + '-' + p.lengthIn.toFixed(2) + 'in' +
-      (p.leftHanded && !m.symmetric ? '-lefty' : '');
+    var base = 'body-' + (p.style === 'custom' ? 'custom' : p.style) + '-' + (m.lengthMm / IN).toFixed(2) + 'in' +
+      (p.leftHanded && m.shape === 'tstyle' ? '-lefty' : '');
     result.names = {
-      left: base + '-left-half.stl', right: base + '-right-half.stl', collar: base + '-neck-collar.stl', cap: base + '-cutaway-cap.stl',
-      neckBlock: base + '-neck-block.stl', tailBlock: base + '-tail-block.stl',
-      topSvg: base + '-top-panel.svg', backSvg: base + '-back-panel.svg',
-      topDxf: base + '-top-panel.dxf', backDxf: base + '-back-panel.dxf'
+      body: base + '.stl', cover: base + '-cover.stl', topSvg: base + '-top-panel.svg', topDxf: base + '-top-panel.dxf',
+      coverSvg: base + '-cover.svg', coverDxf: base + '-cover.dxf'
     };
-    $('filename').textContent = result.names.left + ' · ' + result.names.right + ' · ' + result.names.neckBlock + ' · ' + result.names.tailBlock + (m.collar ? ' · ' + result.names.collar : '') + (m.cap ? ' · ' + result.names.cap : '');
+    $('filename').textContent = result.names.body + (result.cover ? ' · ' + result.names.cover : '');
     $('status').textContent = 'Built in ' + (Date.now() - t0) + ' ms — ' +
-      (m.triangles.left + m.triangles.right + m.triangles.collar + m.triangles.cap + (m.triangles.neckBlock || 0) + (m.triangles.tailBlock || 0)).toLocaleString() + ' triangles, watertight parts.';
+      (m.triangles.body + m.triangles.cover).toLocaleString() + ' triangles, watertight.';
     render(true);
   }
 
@@ -207,6 +170,15 @@
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
   }
+  function coverCut() {
+    var a = result.meta.access;
+    var holes = a.screws.map(function (s) {
+      var pts = [], r = a.screwClearMm / 2;
+      for (var i = 0; i < 24; i++) pts.push([s.x + r * Math.cos(Math.PI * i / 12), s.y + r * Math.sin(Math.PI * i / 12)]);
+      return pts;
+    });
+    return a.cover.outline.concat(holes);
+  }
 
   // ---- events
   styleEl.addEventListener('change', function () { applyStyle(styleEl.value); });
@@ -217,33 +189,17 @@
   });
   NUM_FIELDS.forEach(function (k) { $(k).addEventListener('input', schedule); });
   SELECT_FIELDS.forEach(function (k) { $(k).addEventListener('change', schedule); });
-  $('tailBolts').addEventListener('change', schedule);
-  $('leftHanded').addEventListener('change', schedule);
-  // the neck bolt ties the halves at the neck whether or not the collar is on
-  $('neckCollar').addEventListener('change', function () { syncShapeRows(); schedule(); });
+  CHECK_FIELDS.forEach(function (k) { $(k).addEventListener('change', schedule); });
   $('bedIn').addEventListener('input', schedule);
 
-  $('dl-left').addEventListener('click', function () { if (result) download(STLExport.trianglesToSTL(result.groups.left), result.names.left); });
-  $('dl-right').addEventListener('click', function () { if (result) download(STLExport.trianglesToSTL(result.groups.right), result.names.right); });
-  // the blocks print standing on their undersides: move them to z = 0
-  $('dl-neck-block').addEventListener('click', function () {
-    if (result) download(STLExport.trianglesToSTL(shifted(result.groups.neckBlock, 0, 0, -result.meta.neckBlock.bottomZ)), result.names.neckBlock);
-  });
-  $('dl-tail-block').addEventListener('click', function () {
-    if (result) download(STLExport.trianglesToSTL(shifted(result.groups.tailBlock, 0, 0, -result.meta.tailBlock.bottomZ)), result.names.tailBlock);
-  });
-  // the collar prints underside down: move it to z = 0 for the STL
-  $('dl-collar').addEventListener('click', function () {
-    if (result && result.groups.collar) download(STLExport.trianglesToSTL(shifted(result.groups.collar, 0, 0, -result.meta.collar.bottomZ)), result.names.collar);
-  });
-  // the cutaway cap prints upside down, its top face on the bed
-  $('dl-cap').addEventListener('click', function () {
-    if (result && result.groups.cap) download(STLExport.trianglesToSTL(B.flipZ(result.groups.cap, result.meta.cap.topZ)), result.names.cap);
-  });
-  $('dl-top-svg').addEventListener('click', function () { if (result) download(B.panelSVG(result.meta.panels.top.outline, 'Top panel'), result.names.topSvg, 'image/svg+xml'); });
-  $('dl-back-svg').addEventListener('click', function () { if (result) download(B.panelSVG(result.meta.panels.back.outline, 'Back panel'), result.names.backSvg, 'image/svg+xml'); });
-  $('dl-top-dxf').addEventListener('click', function () { if (result) download(B.panelDXF(result.meta.panels.top.outline), result.names.topDxf, 'application/dxf'); });
-  $('dl-back-dxf').addEventListener('click', function () { if (result) download(B.panelDXF(result.meta.panels.back.outline), result.names.backDxf, 'application/dxf'); });
+  // the body STL is already in print orientation (back face on z = 0)
+  $('dl-body').addEventListener('click', function () { if (result) download(STLExport.trianglesToSTL(result.body), result.names.body); });
+  // the cover prints outer face down; it is modelled that way
+  $('dl-cover').addEventListener('click', function () { if (result && result.cover) download(STLExport.trianglesToSTL(result.cover), result.names.cover); });
+  $('dl-top-svg').addEventListener('click', function () { if (result) download(B.panelSVG(result.meta.topPanel.outline, 'Top panel'), result.names.topSvg, 'image/svg+xml'); });
+  $('dl-top-dxf').addEventListener('click', function () { if (result) download(B.panelDXF(result.meta.topPanel.outline), result.names.topDxf, 'application/dxf'); });
+  $('dl-cover-svg').addEventListener('click', function () { if (result && result.cover) download(B.panelSVG(coverCut(), 'Cover plate (outer face)'), result.names.coverSvg, 'image/svg+xml'); });
+  $('dl-cover-dxf').addEventListener('click', function () { if (result && result.cover) download(B.panelDXF(coverCut()), result.names.coverDxf, 'application/dxf'); });
 
   Array.prototype.forEach.call(document.querySelectorAll('.view-row button'), function (btn) {
     btn.addEventListener('click', function () {
@@ -253,7 +209,7 @@
       var cam = btn.dataset.cam;
       if (cam === 'top') preview.setView({ az: 0, el: 1.5, zoom: 0.75, center: [0, m.lengthMm / 2, m.depthMm / 2] });
       if (cam === 'back') preview.setView({ az: 0, el: -1.5, zoom: 0.75, center: [0, m.lengthMm / 2, m.depthMm / 2] });
-      if (cam === 'pocket') preview.setView({ az: -2.6, el: 0.6, zoom: 2.2, center: [0, m.lengthMm - m.pocket.lengthMm / 2, m.depthMm * 0.55] });
+      if (cam === 'pocket') preview.setView({ az: -2.6, el: 0.6, zoom: 2.2, center: [0, m.L - m.pocket.lengthMm / 2, m.depthMm * 0.55] });
     });
   });
 

@@ -1,30 +1,34 @@
 /*
- * body-geometry.js — parametric clamshell guitar body ("body builder").
+ * body-geometry.js — parametric one-piece guitar body ("body builder").
  *
- * A small acoustic-style body for 3- and 4-string guitars, made of:
- *   - a printed rim (ring) split down the centre line into two mirror
- *     halves (left and right) that clamp together with bolts through a
- *     solid neck block and a solid tail block;
- *   - a flat 1/8" (3.175 mm) plywood top and back that slide into
- *     grooves (tracks) cut into the inside of the rim near its top and
- *     bottom edges, and are trapped there when the halves bolt up;
- *   - a neck pocket in the neck block for a bolt-on wooden neck, held by
- *     four wood screws through a back plate (or through counterbored
- *     screw wells with washers / ferrules).
+ * A small guitar body for 3- and 4-string necks, printed as ONE part:
+ *   - a perimeter rim (wall) and a solid back floor, printed floor down
+ *     on the bed with the open side on top;
+ *   - an inner glue shelf running round the inside of the rim, just
+ *     below its top edge, with a 45-degree tapered underside (no
+ *     supports). A 1/8" (3.175 mm) plywood top drops into the rim and is
+ *     glued onto the shelf, sitting flush (or a hair below) the rim edge;
+ *   - an integral, solid neck block rising from the floor with a square
+ *     neck pocket (2.75" x 1.5", floor 0.9" below the top surface) for a
+ *     screw-on wooden neck, held by four wood screws up through the back
+ *     floor and the block (through a back plate, or from counterbored
+ *     wells with washers / ferrules);
+ *   - optionally, an access opening in the back floor with a 45-degree
+ *     tapered (countersunk) recess for a flush printed cover plate.
  *
- * Coordinates, millimetres: x across the body (the halves split at
- * x = 0), y along the body (tail tip y = 0, neck end y = L), z up from
- * the back face (z = 0, the face that lies on the print bed).
+ * Coordinates, millimetres: x across the body, y along the body (tail
+ * tip y = 0, neck end y = L), z up from the back face (z = 0, the face
+ * that lies on the print bed).
  *
- * The rim is "2.5D": it is built as a stack of horizontal slabs, each
- * slab a 2D region computed with polygon booleans (Clipper), then
- * meshed into one closed (watertight) triangle mesh per half.
- * Every overhang is a 45-degree staircase, so the halves print back-face
- * down with no supports.
+ * The body is "2.5D": a stack of horizontal slabs, each slab a 2D region
+ * computed with polygon booleans (Clipper), meshed into one closed
+ * (watertight) triangle mesh. Every overhang is a 45-degree staircase
+ * (steps of STEP mm) except the flat roofs of the screw wells (short,
+ * round bridges).
  *
- * Outlines may be asymmetric (the T-Style single cutaway): each side
- * has its own width function, the halves are simply what lies left and
- * right of x = 0, so they need not be mirror images.
+ * If an outline is bigger than the print bed allows (bed minus a small
+ * margin), only the OUTLINE is scaled down uniformly until it fits; the
+ * neck pocket, wall, floor, shelf and screw holes stay true size.
  *
  * Pure math, no DOM. In the browser it attaches `window.BodyBuilder`;
  * in Node it uses module.exports so the geometry can be unit-tested.
@@ -38,25 +42,11 @@
 
   var IN = 25.4;
   var S = 1000;          // Clipper works in integers: 1 unit = 1 micron
-  var BIG = 2000 * S;    // "infinity" for half-planes and strips
   var STEP = 0.4;        // staircase step (mm) for every printed overhang
   var ARC_TOL = 0.03 * S;
-  var FLOOR_MIN = 15;
-  // Thinnest plain wall: 2 mm is five 0.4 mm perimeters. Behind each
-  // channel the wall alone joins the upper and lower lips, and a panel
-  // pried up levers on it over the 7 mm lip; thinner than this it cracks
-  // along a layer line.
-  var WALL_MIN = 2.0;    // mm of printed block kept under the neck pocket floor
-
-  // Clearance holes / washers for the clamshell bolts.
-  var BOLTS = {
-    // nomMm: thread size; nutAFMm: nut across flats; insertHoleMm /
-    // insertLenMm: hole for a common heat-set insert of that thread.
-    M3: { label: 'M3', holeMm: 3.4, washerMm: 7.0, nutMm: 2.4, washerTMm: 0.5, nomMm: 3.0, nutAFMm: 5.5, insertHoleMm: 4.0, insertLenMm: 5.7 },
-    M4: { label: 'M4', holeMm: 4.5, washerMm: 9.0, nutMm: 3.2, washerTMm: 0.8, nomMm: 4.0, nutAFMm: 7.0, insertHoleMm: 5.6, insertLenMm: 8.1 },
-    '#6': { label: '#6', holeMm: 3.8, washerMm: 9.5, nutMm: 2.8, washerTMm: 1.2, nomMm: 3.5, nutAFMm: 7.94, insertHoleMm: 4.8, insertLenMm: 7.1 }
-  };
-  var METRIC_LENGTHS = [8, 10, 12, 16, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 80, 90, 100];
+  var FLOOR_MIN = 15;    // mm of printed block kept under the neck pocket floor
+  var WALL_MIN = 2.0;    // thinnest rim wall (five 0.4 mm perimeters)
+  var FLOOR_MIN_MM = 2.0; // thinnest back floor
 
   // Every user-adjustable value with its default. Big dimensions are in
   // inches (like the fretboard builder), fine clearances in millimetres.
@@ -72,41 +62,43 @@
     upperPos: 0.80,
     widthIn: 7.0,            // box and T-Style shapes
     cornerRadiusIn: 0.5,     // box shape only
-    depthIn: 3.25,           // rim height = overall body depth
-    wallMm: 3.0,             // plain rim wall thickness (outside to inside face); the channel flanges add to it at each panel level
-    panelThicknessMm: 3.175, // 1/8" plywood
-    panelFitMm: 0.4,         // extra channel height over the panel thickness (slide-in fit)
-    // Panel channels: a flat lip on each face of each panel, reaching in
-    // from the channel back (see build()).
-    channelDepthMm: 4.0,     // lip overlap: how far each lip reaches over the panel edge
-    lipMm: 2.0,              // thickness of every channel lip (flat, no chamfer)
-    channelSagMm: 0.3,       // extra channel height so the flat lip undersides can droop a little
-    panelEdgeGapMm: 0.5,     // gap left at the back of the channel (panel is cut this much smaller)
-    pocketLengthIn: 3.0,
+    depthIn: 3.25,           // overall body depth: back face to rim edge
+    wallMm: 3.0,             // rim wall thickness
+    floorMm: 3.0,            // back floor thickness
+    panelThicknessMm: 3.175, // 1/8" plywood top
+    shelfAllowanceMm: 0.25,  // shelf drop below the rim edge = panel thickness + this (0 = top dead flush)
+    shelfWidthMm: 7.0,       // how far the glue shelf reaches in from the wall's inside face
+    shelfLipMm: 1.6,         // straight (vertical) edge of the shelf under the glue surface, above the 45-degree taper
+    topFitMm: 0.3,           // top panel cut this much inside the rim's inside face (drop-in fit)
+    pocketLengthIn: 2.75,
     pocketWidthIn: 1.5,
     pocketDepthIn: 0.9,      // pocket floor below the top surface of the top panel
     pocketFitMm: 0.15,       // added to each side of the pocket width
-    neckBlockSideMm: 19.0,   // solid wall each side of the pocket
-    neckBlockEndMm: 19.0,    // solid wall past the inner end of the pocket
-    baseBlockMm: 18.0,       // height of the neck / tail blocks' full-width slab, above the back panel (carries the bolts)
-    tailBlockLengthMm: 30.0,
-    tailBlockWidthMm: 50.0,
+    neckBlockSideMm: 19.0,   // solid block each side of the pocket
+    neckBlockEndMm: 19.0,    // solid block past the inner end of the pocket
     neckScrewMode: 'plate',  // 'plate' (back plate on the back face) or 'wells' (washers / ferrules)
     neckScrewSpanXIn: 0.875, // hole spacing across the neck
     neckScrewSpanYIn: 1.75,  // hole spacing along the neck
     neckScrewHoleMm: 4.6,    // clearance for a #8 wood screw
     wellDiameterMm: 16.0,
-    wellFloorMm: 25.4,       // printed floor kept between the wells and the pocket
+    wellFloorMm: 25.4,       // printed block kept between the wells and the pocket floor
     plateThicknessMm: 3.0,
     screwBiteMm: 19.0,       // thread length wanted in the wooden neck
-    boltSize: 'M4',
-    neckBolts: 1,            // sideways bolts through both walls and the neck block (they tie the halves together at the neck)
-    tailBolts: 2,            // 1 = low bolt in the tail block's slab; 2 = plus an upper bolt just under the top channel
-    neckCollar: true,        // print the upper neck block (pocket walls) as its own part, bolted down vertically
-    collarFastener: 'nut',   // 'nut' (hex nut traps, dropped in from the top) or 'insert' (heat-set inserts)
-    collarClearanceMm: 0.25, // gap between the collar and the rim's inside wall
-    collarNutFloorMm: 8.0,   // collar plastic between the nut and the collar's underside
+    accessPanel: false,      // cut an access opening (with a cover recess) in the back
+    accessLengthMm: 110,     // clear opening, along the body
+    accessWidthMm: 75,       // clear opening, across the body
+    accessCornerMm: 20,      // corner radius of the opening
+    accessPos: 0.33,         // opening centre, fraction of the body length from the tail
+    coverThicknessMm: 4.0,   // cover plate = depth of the tapered recess (the seat is a 45-degree bevel this wide)
+    coverFitMm: 0.2,         // cover cut this much smaller than the recess all round
+    accessRingMm: 5.0,       // raised ring round the recess, inside the body (wall thickness beyond the recess)
+    accessRingHeightMm: 4.0, // ring height above the top of the recess
+    coverScrews: 4,          // small screws holding the cover (0 = none: glue / tape / friction)
+    coverScrewHoleMm: 2.0,   // pilot hole in the body ring (#2 / M2.5 self-tapping)
+    coverScrewClearMm: 2.8,  // clearance hole in the cover
     bedMm: 327.66,           // 12.9"
+    bedMarginMm: 5.0,        // the body must be this much shorter / narrower than the bed
+    fitBed: true,            // scale the outline (only) down to fit the bed
     leftHanded: false        // mirror asymmetric outlines (cutaway on the other side)
   };
 
@@ -131,9 +123,9 @@
       label: 'Cigar-box style',
       values: { shape: 'box', lengthIn: 12.0, widthIn: 7.0, cornerRadiusIn: 0.5, depthIn: 3.0 }
     },
-    // Single-cutaway slab body traced from t-style-body-outline.svg and
-    // scaled uniformly to 12.9" long (10.52" wide). 12.9" is the whole
-    // bed, so the bed warning stays on: print diagonally, or see README.
+    // Single-cutaway slab body traced from t-style-body-outline.svg at
+    // 12.9" long (10.52" wide). That is the whole bed, so the builder
+    // scales the outline down to fit (bed minus the margin).
     't-style': {
       label: 'T-Style',
       values: { shape: 'tstyle', lengthIn: 12.9, widthIn: 10.52, depthIn: 1.85 }
@@ -304,14 +296,16 @@
     //  - bass side: a straight edge from the bass horn to the neck end
     //    (convex hull of the outline near the neck end, bass side only),
     //  - treble side: a wall beside the pocket, straight along it, as wide
-    //    as the old preset kept (pocket + wall + channel reach); the
-    //    cutaway curve itself is unchanged outside it.
+    //    pocket + wall + the glue shelf's reach (so the top panel still
+    //    has a glue seat there); the cutaway curve is unchanged outside it.
+    //  The pocket, wall and shelf are true size: when the outline is
+    //  scaled down to fit the bed this closure is not.
     var pocketHalf = (p.pocketWidthIn !== undefined ? p.pocketWidthIn : DEFAULTS.pocketWidthIn) * IN / 2 +
       (p.pocketFitMm !== undefined ? p.pocketFitMm : DEFAULTS.pocketFitMm);
     var pl = (p.pocketLengthIn !== undefined ? p.pocketLengthIn : DEFAULTS.pocketLengthIn) * IN;
     var wallT = p.wallMm !== undefined ? p.wallMm : DEFAULTS.wallMm;
-    var chan = p.channelDepthMm !== undefined ? p.channelDepthMm : DEFAULTS.channelDepthMm;
-    var side = pocketHalf + wallT + Math.max(6.7, chan);
+    var shelfW = p.shelfWidthMm !== undefined ? p.shelfWidthMm : DEFAULTS.shelfWidthMm;
+    var side = pocketHalf + wallT + Math.max(6.7, shelfW);
     var bassS = -mir;                                              // sign of x on the bass side
     var near = raw.filter(function (q) { return q[1] >= L - 0.2 * L && q[0] * bassS >= -side; });
     near.push([0, L], [-bassS * side, L], [0, L - 0.2 * L]);
@@ -340,20 +334,6 @@
     ClipperLib.Clipper.CleanPolygon(best, 20);
     if (ClipperLib.Clipper.Area(best) < 0) best.reverse();
     return best.map(function (q) { return [q.X / 1000, q.Y / 1000]; });
-  }
-  // first outline crossing met going out from |x| = x0 along the line y
-  // (for a T-Style horn that is the cutaway, not the horn beyond it)
-  function nearEdge(sh, y, side, x0) {
-    if (sh.kind !== 'tstyle') return halfWidth(sh, y, side);
-    var best = Infinity, poly = sh.poly, n = poly.length;
-    for (var i = 0; i < n; i++) {
-      var a = poly[i], b = poly[(i + 1) % n];
-      if ((a[1] - y) * (b[1] - y) > 0 || a[1] === b[1]) continue;
-      var x = a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
-      x = side === 'left' ? -x : x;
-      if (x > x0) best = Math.min(best, x);
-    }
-    return best === Infinity ? 0 : best;
   }
   // furthest extent of a polygon on one side of x = 0 along the line y
   function polyHalfWidth(poly, y, side) {
@@ -496,15 +476,6 @@
       return pts;
     }).filter(function (p) { return p.length >= 3 && ClipperLib.Clipper.Area(p) !== 0; });
   }
-  function leftHPFn() { return rect(-BIG / S, -BIG / S, 0, BIG / S); }
-  function rightHPFn() { return rect(0, -BIG / S, BIG / S, BIG / S); }
-  // region swept by paths moving along x (dir +1 or -1) to infinity
-  function sweepX(paths, dir) {
-    var seg = [{ X: 0, Y: 0 }, { X: dir * BIG, Y: 0 }, { X: dir * BIG, Y: 1 }, { X: 0, Y: 1 }];
-    var all = [];
-    paths.forEach(function (pp) { all = all.concat(ClipperLib.Clipper.MinkowskiSum(seg, pp, true)); all.push(pp); });
-    return union(all);
-  }
   function areaMm2(paths) {
     var a = 0;
     paths.forEach(function (p) { a += ClipperLib.Clipper.Area(p); });
@@ -517,7 +488,7 @@
   // Insert a vertex wherever an edge crosses one of the given vertical
   // (x = const) or horizontal (y = const) lines (integer microns). Every
   // straight cut later made along those lines (pocket sides, block
-  // edges, bolt holes, the split between the halves) then meets the
+  // edges, block edges) then meets the
   // curve exactly at an existing vertex, so no boolean ever has to
   // invent (and round) a crossing point — that keeps neighbouring slabs
   // exactly consistent and the mesh watertight.
@@ -754,63 +725,188 @@
   }
 
   // ------------------------------------------------------------------
-  // Teardrop / staircase helpers for horizontal bolt holes
+  // Small helpers for the one-piece build
   // ------------------------------------------------------------------
-  // Half-width of a teardrop hole of radius r centred at zc, at height z:
-  // round below the centre, 45-degree flanks to a point above it, so the
-  // roof prints without support.
-  function teardropHalf(r, zc, z) {
-    var d = z - zc;
-    if (d <= r / Math.SQRT2) return Math.sqrt(Math.max(0, r * r - d * d));
-    return Math.max(0, r * Math.SQRT2 - d);
+  // Only these scale when the outline is shrunk to fit the bed.
+  var OUTLINE_KEYS = ['lengthIn', 'lowerWidthIn', 'waistWidthIn', 'upperWidthIn', 'widthIn', 'cornerRadiusIn'];
+  function scaledParams(p, s) {
+    var q = {};
+    Object.keys(p).forEach(function (k) { q[k] = p[k]; });
+    OUTLINE_KEYS.forEach(function (k) { q[k] = p[k] * s; });
+    return q;
   }
-  // Split [z0, z1] into STEP-high bands on a global grid (multiples of STEP).
-  function gridBands(z0, z1) {
-    var out = [], a = z0;
-    var g = Math.floor(z0 / STEP + 1e-9) * STEP + STEP;
-    while (a < z1 - 1e-9) {
-      var b = Math.min(z1, g);
-      if (b - a > 1e-6) out.push([a, b]);
-      a = b; g += STEP;
-    }
-    // no sliver bands (a few microns tall): fold them into a neighbour
-    if (out.length > 1 && out[0][1] - out[0][0] < 0.1) { out[1][0] = out[0][0]; out.shift(); }
-    var n = out.length;
-    if (n > 1 && out[n - 1][1] - out[n - 1][0] < 0.1) { out[n - 2][1] = out[n - 1][1]; out.pop(); }
-    return out;
+  // [width across (x), length along (y)] of a point list
+  function outlineSize(pts) {
+    var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    pts.forEach(function (q) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); });
+    return [x1 - x0, y1 - y0];
   }
-  function teardropBands(r, zc) {
-    var top = zc + r * Math.SQRT2;
-    return gridBands(zc - r, top).map(function (band) {
-      var zm = clamp(zc, band[0], band[1]);
-      // quantised to 0.2 mm so neighbouring bands never differ by a
-      // few microns (sub-printable slivers)
-      // (rounded up through the round part, down on the 45-degree flanks
-      // so the tip stays narrow)
-      var hq = teardropHalf(r, zc, zm) / 0.2;
-      return { z0: band[0], z1: band[1], half: (zm <= zc + r / Math.SQRT2 ? Math.ceil(hq - 1e-6) : Math.floor(hq + 1e-6)) * 0.2 };
-    }).filter(function (b) { return b.half > 0.05; });
-  }
-
-  var BED_MARGIN = 2;
-  // one half's footprint (side 1 = +x, -1 = -x) as a point list
-  function halfPoly(outline, sg) {
-    var pts = outline.filter(function (q) { return q[0] * sg >= 0; });
-    pts.push([0, 0]);
-    outline.forEach(function (q) { pts.push([0, q[1]]); });
+  // counter-clockwise rounded rectangle centred on (cx, cy), w across, l along
+  function roundedRect(cx, cy, w, l, r, n) {
+    n = n || 10;
+    r = clamp(r, 0.5, Math.min(w, l) / 2 - 0.01);
+    var pts = [], corners = [[cx + w / 2 - r, cy - l / 2 + r, -90], [cx + w / 2 - r, cy + l / 2 - r, 0],
+      [cx - w / 2 + r, cy + l / 2 - r, 90], [cx - w / 2 + r, cy - l / 2 + r, 180]];
+    corners.forEach(function (c) {
+      for (var i = 0; i <= n; i++) {
+        var ang = (c[2] + 90 * i / n) * Math.PI / 180;
+        pts.push([c[0] + r * Math.cos(ang), c[1] + r * Math.sin(ang)]);
+      }
+    });
     return pts;
   }
-  // side of the smallest square holding the points at the best rotation
-  function squareFit(pts) {
-    var best = Infinity;
-    for (var a = 0; a < 90; a += 0.25) {
-      var c = Math.cos(a * Math.PI / 180), s = Math.sin(a * Math.PI / 180);
-      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-      pts.forEach(function (q) { var u = q[0] * c - q[1] * s, v = q[0] * s + q[1] * c;
-        x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v); });
-      best = Math.min(best, Math.max(x1 - x0, y1 - y0));
+  // n points evenly spaced (by length) round a closed path (mm points)
+  function pointsAlong(path, n) {
+    if (n <= 0) return [];
+    var segs = [], total = 0, i;
+    for (i = 0; i < path.length; i++) {
+      var a = path[i], b = path[(i + 1) % path.length], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      segs.push([a, b, l]); total += l;
     }
-    return best;
+    var out = [];
+    for (var k = 0; k < n; k++) {
+      var s = total * (k + 0.5) / n, acc = 0;
+      for (i = 0; i < segs.length; i++) {
+        if (acc + segs[i][2] >= s) {
+          var u = segs[i][2] ? (s - acc) / segs[i][2] : 0;
+          out.push([segs[i][0][0] + (segs[i][1][0] - segs[i][0][0]) * u, segs[i][0][1] + (segs[i][1][1] - segs[i][0][1]) * u]);
+          break;
+        }
+        acc += segs[i][2];
+      }
+    }
+    return out;
+  }
+  function screwLengthIn(mm) { return Math.ceil(mm / IN * 4 - 1e-6) / 4; }
+
+  // Booleans where an offset curve grazes a straight cut can land a
+  // vertex a micron or two off the cut line, or two vertices a micron
+  // apart, differently in neighbouring slabs (a T-junction the mesher
+  // can't close). Across all slabs of one part: snap such vertices onto
+  // the split lines and merge near-twins into the one more slabs share.
+  function tidy(regs, SXs, SYs, tol) {
+    var TOL = tol || 2;
+    function snapTo(v, lines) {
+      var lo = 0, hi = lines.length - 1;
+      while (lo < hi) { var mid = (lo + hi) >> 1; if (lines[mid] < v - TOL) lo = mid + 1; else hi = mid; }
+      return lines.length && Math.abs(lines[lo] - v) <= TOL ? lines[lo] : v;
+    }
+    var cnt = new Map();
+    regs = regs.map(function (paths) {
+      return paths.map(function (path) {
+        return path.map(function (q) {
+          var v = { X: snapTo(q.X, SXs), Y: snapTo(q.Y, SYs) };
+          var key = v.X + ',' + v.Y;
+          cnt.set(key, (cnt.get(key) || 0) + 1);
+          return v;
+        });
+      });
+    });
+    // near-twins: cluster every vertex within TOL of another (chains
+    // too) and use one point per cluster, the one most slabs share
+    var keys = Array.from(cnt.keys()), parent = new Map();
+    function find(k) { while (parent.get(k) !== k) { parent.set(k, parent.get(parent.get(k))); k = parent.get(k); } return k; }
+    keys.forEach(function (k) { parent.set(k, k); });
+    keys.forEach(function (k) {
+      var xy = k.split(',').map(Number);
+      for (var dx = -TOL; dx <= TOL; dx++) for (var dy = -TOL; dy <= TOL; dy++) {
+        if (!dx && !dy) continue;
+        var k2 = (xy[0] + dx) + ',' + (xy[1] + dy);
+        if (parent.has(k2)) { var r1 = find(k), r2 = find(k2); if (r1 !== r2) parent.set(r1, r2); }
+      }
+    });
+    var best = new Map();
+    keys.forEach(function (k) {
+      var r = find(k), b = best.get(r);
+      if (!b || cnt.get(k) > cnt.get(b) || (cnt.get(k) === cnt.get(b) && k < b)) best.set(r, k);
+    });
+    return regs.map(function (paths) {
+      return cleanSpikes(paths.map(function (path) {
+        var res = [];
+        path.forEach(function (v) {
+          var xy = best.get(find(v.X + ',' + v.Y)).split(',').map(Number), w = { X: xy[0], Y: xy[1] };
+          var last = res[res.length - 1];
+          if (!last || last.X !== w.X || last.Y !== w.Y) res.push(w);
+        });
+        while (res.length > 1 && res[0].X === res[res.length - 1].X && res[0].Y === res[res.length - 1].Y) res.pop();
+        return res;
+      }));
+    });
+  }
+
+  // Insert the crossing points of every edge of `a` with every edge of
+  // `b` (paths, integer microns) into both, rounded once, so later
+  // booleans meet at shared vertices instead of inventing (and rounding)
+  // their own crossings differently in each slab. Mutates nothing.
+  function mutualSplit(a, b) {
+    var addA = a.map(function () { return []; }), addB = b.map(function () { return []; });
+    a.forEach(function (pa, ia) {
+      var na = pa.length;
+      for (var i = 0; i < na; i++) {
+        var p1 = pa[i], p2 = pa[(i + 1) % na];
+        b.forEach(function (pb, ib) {
+          var nb = pb.length;
+          for (var j = 0; j < nb; j++) {
+            var q1 = pb[j], q2 = pb[(j + 1) % nb];
+            var rx = p2.X - p1.X, ry = p2.Y - p1.Y, sx = q2.X - q1.X, sy = q2.Y - q1.Y;
+            var den = rx * sy - ry * sx;
+            if (den === 0) continue;
+            var t = ((q1.X - p1.X) * sy - (q1.Y - p1.Y) * sx) / den;
+            var u = ((q1.X - p1.X) * ry - (q1.Y - p1.Y) * rx) / den;
+            if (t <= 1e-9 || t >= 1 - 1e-9 || u <= 1e-9 || u >= 1 - 1e-9) continue;
+            var X = { X: Math.round(p1.X + rx * t), Y: Math.round(p1.Y + ry * t) };
+            addA[ia].push([i, t, X]); addB[ib].push([j, u, X]);
+          }
+        });
+      }
+    });
+    function apply(paths, adds) {
+      return paths.map(function (path, ip) {
+        if (!adds[ip].length) return path.slice();
+        var by = {};
+        adds[ip].forEach(function (c) { (by[c[0]] = by[c[0]] || []).push(c); });
+        var out = [];
+        path.forEach(function (q, i) {
+          out.push(q);
+          (by[i] || []).sort(function (m, n) { return m[1] - n[1]; }).forEach(function (c) {
+            var last = out[out.length - 1];
+            if (last.X !== c[2].X || last.Y !== c[2].Y) out.push(c[2]);
+          });
+        });
+        return out;
+      });
+    }
+    return [apply(a, addA), apply(b, addB)];
+  }
+
+  // Stack of z-ranged solids minus z-ranged voids -> slab levels (microns)
+  // and one region per slab.
+  function stack(solids, voids) {
+    var zs = [];
+    solids.concat(voids).forEach(function (f) { f.a = Math.round(f.z0 * S); f.b = Math.round(f.z1 * S); zs.push(f.a, f.b); });
+    var lo = Infinity, hi = -Infinity;
+    solids.forEach(function (f) { lo = Math.min(lo, f.a); hi = Math.max(hi, f.b); });
+    zs = zs.filter(function (z) { return z >= lo && z <= hi; }).sort(function (a, b) { return a - b; });
+    var levels = [];
+    zs.forEach(function (z) { if (!levels.length || z > levels[levels.length - 1]) levels.push(z); });
+    var regions = [];
+    for (var k = 0; k + 1 < levels.length; k++) {
+      var z0 = levels[k], z1 = levels[k + 1], base = [], vv = [];
+      solids.forEach(function (f) { if (f.a <= z0 && f.b >= z1) base = base.concat(f.reg); });
+      voids.forEach(function (f) { if (f.a <= z0 && f.b >= z1) vv = vv.concat(f.reg); });
+      regions.push(cleanSpikes(vv.length ? diff(union(base), union(vv)) : union(base)));
+    }
+    return { levels: levels, regions: regions };
+  }
+  // merge consecutive slabs whose regions are identical (fewer levels)
+  function mergeSame(st) {
+    var lv = [st.levels[0]], rg = [];
+    function key(r) { return JSON.stringify(r); }
+    st.regions.forEach(function (r, k) {
+      if (rg.length && key(rg[rg.length - 1]) === key(r)) lv[lv.length - 1] = st.levels[k + 1];
+      else { rg.push(r); lv.push(st.levels[k + 1]); }
+    });
+    return { levels: lv, regions: rg };
   }
 
   // ------------------------------------------------------------------
@@ -818,768 +914,238 @@
   // ------------------------------------------------------------------
   function build(input) {
     var p = withDefaults(input);
+    p.accessPanel = p.accessPanel === true || p.accessPanel === 'true' || p.accessPanel === 1;
+    p.fitBed = !(p.fitBed === false || p.fitBed === 'false' || p.fitBed === 0);
+    p.leftHanded = p.leftHanded === true || p.leftHanded === 'true' || p.leftHanded === 1;
     var warnings = [];
-    if (p.wallMm < WALL_MIN) {
-      warnings.push('Wall raised to the ' + WALL_MIN.toFixed(1) + ' mm minimum: thinner walls crack behind the panel channels.');
-      p.wallMm = WALL_MIN;
-    }
-    var sh = shapeOf(p);
-    var L = sh.L, Dreq = p.depthIn * IN;
-    var bolt = BOLTS[p.boltSize] || BOLTS.M4;
-    var t = p.panelThicknessMm, fit = p.panelFitMm, ec = p.panelEdgeGapMm;
-    var cD = Math.max(1, p.channelDepthMm), lip = Math.max(0.6, p.lipMm), lipIn = lip;
-    var hC = t + fit + Math.max(0, p.channelSagMm);      // channel height
-    var topRim = lip;                                    // rim above the top panel's channel
+    if (!(p.wallMm >= WALL_MIN)) { warnings.push('Walls thinner than ' + WALL_MIN + ' mm are too weak; using ' + WALL_MIN + ' mm.'); p.wallMm = WALL_MIN; }
+    if (!(p.floorMm >= FLOOR_MIN_MM)) { warnings.push('Back floor thinner than ' + FLOOR_MIN_MM + ' mm is too weak; using ' + FLOOR_MIN_MM + ' mm.'); p.floorMm = FLOOR_MIN_MM; }
+    p.shelfWidthMm = clamp(p.shelfWidthMm, 3, 20);
+    p.shelfLipMm = clamp(p.shelfLipMm, 0.8, 6);
+    p.shelfAllowanceMm = clamp(p.shelfAllowanceMm, 0, 2);
+    p.topFitMm = clamp(p.topFitMm, 0, 1.5);
 
-    // The back mirrors the top: the back panel covers the whole outline,
-    // and the neck and tail blocks are separate parts standing on it
-    // (their undersides flush with the back channel's upper face, zBS),
-    // the same way the top panel lies on their tops (zTS0).
-    // Minimum depth: the pocket floor needs at least FLOOR_MIN mm of block
-    // under it (above the back panel) and must stay 3 mm above the
-    // teardrop of the neck bolt that runs under the pocket; the middle zone
-    // needs 5 mm between the blocks' full-width slabs and the top track.
-    // Shallower requests are raised to it.
-    var zBS0 = lip + hC;                                 // block undersides
-    var rSpot0 = (BOLTS[p.boltSize] || BOLTS.M4).washerMm / 2 + 0.5;
-    var slabH = Math.max(p.baseBlockMm, rSpot0 * (1 + Math.SQRT2) + 4.5);
-    // the low tail bolt sits this far above the slab's middle: the tail's
-    // curved wall needs a deeper boss behind its washer seats (see below),
-    // whose corbel needs the height; the slab grows to keep it inside
-    var tailUp = 1.25;
-    var slabTop = Math.max(slabH, slabH / 2 + tailUp + rSpot0 * Math.SQRT2 + 1);
-    var baseTop0 = zBS0 + slabTop;                       // top of the blocks' full-width slabs
-    var collarOn = !!p.neckCollar && p.neckCollar !== 'false';
-    if (collarOn && p.neckBolts >= 2) {
-      warnings.push('With the neck collar, only one sideways neck bolt fits (the rear one would cross the collar bolts); using 1.');
-      p.neckBolts = 1;
-    }
-    if (p.neckBolts < 1) warnings.push('No neck bolt: the neck block is its own part, so nothing ties the two halves together at the neck. Use at least one sideways neck bolt.');
-    var floorReq = Math.max(FLOOR_MIN, p.neckBolts >= 1 ? slabH / 2 + (BOLTS[p.boltSize] || BOLTS.M4).holeMm / 2 * Math.SQRT2 + 3 : 0);
-    var Dmin = Math.max(zBS0 + floorReq + p.pocketDepthIn * IN + topRim + hC - t, baseTop0 + 5 + lipIn + hC + topRim);
-    var D = Math.max(Dreq, Dmin);
-    if (Dreq < Dmin - 1e-9) {
-      warnings.push('Body depth raised to the minimum ' + (Dmin / IN).toFixed(2) + '″ (' + Dmin.toFixed(1) + ' mm): the ' +
-        p.pocketDepthIn.toFixed(2) + '″ pocket needs ' + floorReq.toFixed(1) + ' mm of neck block between its floor and the back panel, and the panel channels need room above the block slabs.');
-    }
-    var pl = p.pocketLengthIn * IN, pw2 = p.pocketWidthIn * IN / 2 + p.pocketFitMm;
-    var bl = pl + p.neckBlockEndMm;                 // neck block length (from the neck end)
-    var kw = pw2 + p.neckBlockSideMm;               // neck block half width
-    var tbl = p.tailBlockLengthMm, tw = p.tailBlockWidthMm / 2;
-
-    var outline = outlinePoints(sh);
-    var maxR = 0, maxL = 0;
-    outline.forEach(function (q) { if (q[0] > 0) maxR = Math.max(maxR, q[0]); else maxL = Math.max(maxL, -q[0]); });
-    var maxHw = Math.max(maxR, maxL);
-
-    // heights
-    var zBL = lip, zBS = zBL + hC;                         // back panel channel
-    var zBU = zBS + lipIn;                                 // top of the back channel's upper lip
-    var zTS1 = D - topRim, zTS0 = zTS1 - hC;               // top panel channel
-    var zTA = zTS0 - lipIn;                                // underside of the top channel's lower lip
-    var panelTopZ = zTS0 + t;                              // top surface of the top panel
-    var zF = panelTopZ - p.pocketDepthIn * IN;             // pocket floor
-    var baseTop = zBS + slabTop;                           // top of the blocks' full-width slabs
-
-    // clamshell bolts: horizontal holes through both walls and the
-    // full-width slab of the neck / tail block, centred in the slab, so
-    // they sit well above the back channel and its lips
-    var boltZ = zBS + slabH / 2;
-    var rSpot = bolt.washerMm / 2 + 0.5, rHole = bolt.holeMm / 2;
-    var boltYs = [];
-    if (p.neckBolts >= 1) boltYs.push({ name: 'neck', y: L - pl / 2, low: true });
-    if (p.neckBolts >= 2) boltYs.push({ name: 'neck (rear)', y: L - bl + Math.max(9, rSpot + 4), low: true });
-    var tailY = Math.max(rSpot + 3, tbl / 2);
-    if (p.tailBolts >= 1) boltYs.push({ name: 'tail', y: tailY, z: boltZ + tailUp, low: true });
-    // upper tail bolt: as high in the tail block as its spot face allows,
-    // so the top of the tail seam is clamped too
-    var zUp = zTS0 - rSpot * Math.SQRT2 - 2;
-    if (p.tailBolts >= 2) {
-      if (zUp - rSpot < boltZ + tailUp + rSpot * Math.SQRT2 + 2) warnings.push('The body is too shallow for an upper tail bolt; only the low one was used.');
-      else boltYs.push({ name: 'tail (upper)', y: tailY, z: zUp });
-    }
-    var bossBack = 2.0, bossHalf = rSpot + 1.0;
-    var I0 = null;   // inside of the wall (before presplit), for the boss reach below
-    boltYs.forEach(function (b) {
-      var minR = Infinity, minL = Infinity, maxR = 0, maxL = 0;
-      for (var s2 = -1; s2 <= 1.0001; s2 += 0.05) {
-        // the wall met going out from the middle (for a horn beside a
-        // cutaway: the cutaway's wall, not the horn beyond it)
-        minR = Math.min(minR, nearEdge(sh, b.y + s2 * rSpot, 'right', 0));
-        minL = Math.min(minL, nearEdge(sh, b.y + s2 * rSpot, 'left', 0));
-        maxR = Math.max(maxR, nearEdge(sh, b.y + s2 * rSpot, 'right', 0));
-        maxL = Math.max(maxL, nearEdge(sh, b.y + s2 * rSpot, 'left', 0));
+    // ---- outline, scaled (outline only) to fit the bed
+    var bedLimit = p.bedMm - p.bedMarginMm;
+    var scale = 1, sh = shapeOf(p), pts = outlinePoints(sh), size = outlineSize(pts);
+    var natural = size.slice();
+    if (p.fitBed) {
+      for (var it = 0; it < 8 && Math.max(size[0], size[1]) > bedLimit; it++) {
+        scale *= bedLimit / Math.max(size[0], size[1]) * (1 - 1e-6);
+        sh = shapeOf(scaledParams(p, scale)); pts = outlinePoints(sh); size = outlineSize(pts);
       }
-      b.xe = maxR + 2; b.xeL = maxL + 2;   // the cuts stop just outside that wall
-      b.xs = minR - 1.0;  // flat washer seats, just inside each wall
-      b.xsL = minL - 1.0;
-      if (b.z === undefined) b.z = boltZ;
-      if (b.low) {
-        // the low bolts' washer seats must sit wholly above the 45-degree
-        // corbels under their bosses (see below); with a thin wall on a
-        // tight tail curve the corbel reaches higher, so lift the bolt
-        I0 = I0 || offset([toPath(outline)], -p.wallMm);
-        [rect(b.xs - bossBack, b.y - bossHalf, b.xe, b.y + bossHalf), rect(-b.xeL, b.y - bossHalf, -(b.xsL - bossBack), b.y + bossHalf)].forEach(function (rr) {
-          var full = inter(I0, rr);
-          if (!full.length) return;
-          var r = cD;
-          while (r < cD + 80 && areaMm2(diff(full, offset(I0, -r))) < areaMm2(full) - 0.01) r += STEP;
-          b.z = Math.max(b.z, zBS + (r - cD) + rSpot + 0.1);
-        });
-        baseTop = Math.max(baseTop, b.z + rSpot * Math.SQRT2 + 1);
-      }
-      b.hole = teardropBands(rHole, b.z);
-      b.spot = teardropBands(rSpot, b.z);
-    });
+    }
+    var fitsBed = Math.max(size[0], size[1]) <= bedLimit + 1e-6;
+    if (!fitsBed) {
+      warnings.push('The body (' + (size[1] / IN).toFixed(2) + '″ × ' + (size[0] / IN).toFixed(2) + '″) does not fit the ' +
+        (p.bedMm / IN).toFixed(2) + '″ bed with a ' + p.bedMarginMm + ' mm margin' + (p.fitBed ? '.' : ': turn on "scale to fit the bed".'));
+    }
+    var L = sh.L;
 
-    // lines that straight cuts will follow (see presplit)
-    var bc = p.collarClearanceMm;                    // gap round the separate blocks and the collar
-    var SX = [0, pw2, -pw2, kw, -kw, tw, -tw, kw - bc, -kw + bc, tw - bc, -tw + bc].map(function (v) { return Math.round(v * S); });
-    // tail web: the whole tail end, full width, from y = 0 to just past the
-    // bolts (no thin cavity sliver against the curved tail wall), from the
-    // block slab up to the top channel, so the upper tail bolt clamps solid
-    // material from one washer seat to the other
-    var webH = rSpot + 3;
-    var web0 = -50, web1 = Math.min(tbl, tailY + webH);
-    var SY = [tbl, L - bl, L - pl, web0, web1, tbl - bc, L - bl + bc, web1 - bc];
-    // the washer seats' flat faces cut the curved wall too
-    // bosses behind the washer seats, and the notches in the blocks for them
-    boltYs.forEach(function (b) {
-      SX.push(Math.round(b.xs * S), Math.round(-b.xsL * S));
-      [b.xs - bossBack, -(b.xsL - bossBack), b.xs - bossBack - bc, -(b.xsL - bossBack - bc)].forEach(function (v) { SX.push(Math.round(v * S)); });
-    });
-    // ---- cutaway cap. The halves close sideways over the panels, so
-    // nothing of a half may lie, at the top panel's level, on the far side
-    // of a piece of that panel (it would have to pass through the ply).
-    // A horn that curls back towards the neck (the T-Style's cutaway)
-    // breaks that: the cutaway's walls sit between the neck and the horn's
-    // part of the top panel. Those walls, from the top panel's seat up,
-    // become a separate cap with their top lip, lowered on from above once
-    // the body is closed and glued down onto the half's flat seat. Its
-    // footprint is the rim ring inside an axis-aligned box (straight cuts
-    // that presplit can share with every slab, so the parts stay closed).
-    var capBox = null, floorBox = null;
-    (function () {
-      var O0 = [toPath(outline)], I0 = offset(O0, -p.wallMm);
-      var tp0 = diff(offset(I0, -p.panelEdgeGapMm), rect(-pw2, L - pl, pw2, L + 50));
-      [['left', 1, leftHPFn()], ['right', -1, rightHPFn()]].forEach(function (h) {
-        var hit = inter(inter(diff(O0, I0), sweepX(offset(tp0, 0.3), h[1])), h[2]);
-        if (areaMm2(hit) <= 0.5) return;
-        var hb = bbox(hit), reach = cD + 1.5;
-        var xo = h[0] === 'right' ? Math.ceil(hb[2] + reach) : Math.floor(hb[0] - reach);
-        capBox = { side: h[0], x: xo, y: Math.floor(hb[1] - reach), hit: hit };
-      });
-      // The back panel has the same problem mirrored: with it covering the
-      // whole outline, the horn's part of it lies beyond the cutaway's
-      // wall. That part of the outline (the shadow of the wall, swept the
-      // way the half closes) keeps a printed floor in the half instead,
-      // from the bed up to the back channel's upper lip, and the back
-      // channel runs along its edge like along a wall. Its region is the
-      // outline inside an axis-aligned box (straight cuts presplit can share).
-      [['left', 1, leftHPFn()], ['right', -1, rightHPFn()]].forEach(function (h) {
-        var wallH = inter(diff(O0, I0), h[2]);
-        // (its extent along y from the shadow opened by 0.2 mm, which drops
-        // hairline slivers along the wall faces; across from the shadow
-        // itself, so the box takes in the thin strip beside the tip of the
-        // cutaway's wall too)
-        var raw = inter(I0, sweepX(wallH, -h[1]));
-        var shadow = offset(offset(raw, -0.2), 0.2).filter(function (pp) { return Math.abs(ClipperLib.Clipper.Area(pp)) > 1 * S * S; });
-        if (areaMm2(shadow) <= 1) return;
-        var hb = bbox(shadow);
-        var hr = bbox(inter(raw, rect(-BIG / S, hb[1] - 0.5, BIG / S, BIG / S)));
-        floorBox = { side: h[0], x: h[0] === 'right' ? Math.floor(hr[0]) : Math.ceil(hr[2]), y: Math.floor(hb[1]), shadowMm2: areaMm2(shadow) };
-      });
-    })();
-    if (capBox) { SX.push(Math.round(capBox.x * S)); SY.push(capBox.y); }
-    if (floorBox) { SX.push(Math.round(floorBox.x * S)); SY.push(floorBox.y); }
-    boltYs.forEach(function (b) {
-      b.hole.concat(b.spot).forEach(function (band) { SY.push(b.y - band.half, b.y + band.half); });
-      SY.push(b.y - bossHalf, b.y + bossHalf, b.y - bossHalf - bc, b.y + bossHalf + bc);
-    });
-    SY = SY.map(function (v) { return Math.round(v * S); });
+    // ---- heights (z up from the back face)
+    var t = p.panelThicknessMm, al = p.shelfAllowanceMm, sw = p.shelfWidthMm, lip = p.shelfLipMm;
+    var pocketDepth = p.pocketDepthIn * IN;
+    var D = p.depthIn * IN;
+    var minD = Math.max(al + pocketDepth + FLOOR_MIN, t + al + lip + sw + p.floorMm + 2);
+    if (D < minD - 1e-9) {
+      warnings.push('Body depth raised to ' + (minD / IN).toFixed(2) + '″ (' + minD.toFixed(1) + ' mm): the pocket needs ' + FLOOR_MIN +
+        ' mm of solid block under its floor and the shelf needs room above the back.');
+      D = minD;
+    }
+    var topSurf = D - al;              // top face of the glued-on top panel
+    var zShelf = D - t - al;           // glue surface of the shelf
+    var zTaper0 = zShelf - lip - sw;   // where the 45-degree taper meets the wall
+    var zF = topSurf - pocketDepth;    // pocket floor
+
+    // ---- neck pocket and block (true size, never scaled)
+    var ph = p.pocketWidthIn * IN / 2 + p.pocketFitMm, pl = p.pocketLengthIn * IN;
+    var yP0 = L - pl, bw = ph + p.neckBlockSideMm, yB0 = yP0 - p.neckBlockEndMm;
+    if (yB0 < L * 0.4) warnings.push('The neck block reaches past 60% of the body length; check the pocket length and block size.');
+    var sxs = p.neckScrewSpanXIn * IN / 2, sys = p.neckScrewSpanYIn * IN / 2, yc = L - pl / 2, hr = p.neckScrewHoleMm / 2;
+    var holes = [[-sxs, yc - sys], [sxs, yc - sys], [-sxs, yc + sys], [sxs, yc + sys]];
+    if (sxs + hr > ph - 1 || sys + hr > pl / 2 - 1) warnings.push('The neck screw holes come within 1 mm of the pocket walls; tighten the hole spacing.');
+    var wells = p.neckScrewMode === 'wells', zWell = zF - p.wellFloorMm;
+    if (wells && zWell < 3) {
+      warnings.push('No room for screw wells (the block under the pocket is only ' + zF.toFixed(1) + ' mm and the wells keep ' +
+        p.wellFloorMm + ' mm of it); using a back plate instead.');
+      wells = false;
+    }
+    if (wells && 2 * sxs < p.wellDiameterMm + 1) warnings.push('The screw wells overlap across the neck; use a smaller well or wider hole spacing.');
+
+    // ---- 2D regions (microns). Curves are presplit at every straight
+    // cut line so booleans never invent crossing points.
+    var SX = [-bw, -ph, ph, bw].map(function (v) { return Math.round(v * S); });
+    var SY = [yB0, yP0].map(function (v) { return Math.round(v * S); });
     function P(paths) { return presplit(paths, SX, SY); }
-
-    var O = P([toPath(outline)]);
+    var O0 = toPath(pts);
+    if (ClipperLib.Clipper.Area(O0) < 0) O0.reverse();
+    var O = P(union([O0]));
     var I = P(offset(O, -p.wallMm));
-
-
-    // 2D zones. The neck and tail blocks are separate parts: a full-width
-    // slab (zBS..baseTop) that carries the sideways bolts, and above it the
-    // narrower block up to the top panel (zTS0). The halves keep only the
-    // wall and the lips; where a block stands, they leave its zone open
-    // (Tz / Nz at slab height, Tuz / Nuz above), and the block itself is
-    // that zone less the clearance bc all round.
-    // IB: where the back panel goes (the outline less any horn floor)
-    var floorRect = floorBox ? (floorBox.side === 'right' ? rect(floorBox.x, floorBox.y, BIG / S, BIG / S) : rect(-BIG / S, floorBox.y, floorBox.x, BIG / S)) : [];
-    var IB = floorBox ? P(diff(I, floorRect)) : I;
-    var Ib = P(offset(IB, -bc));
-    var K = rect(-kw, L - bl, kw, L + 50);
-    var Kt = rect(-tw, -50, tw, tbl);
-    var Kw = p.tailBolts >= 2 ? rect(-BIG / S, web0, BIG / S, web1) : [];
-    var pocket = rect(-pw2, L - pl, pw2, L + 50);
-    // only the part of a zone around the given point (an outline can reach
-    // into the neck zone twice, e.g. a horn beside a cutaway)
-    function pick(paths, x, y) {
-      var pt = { X: Math.round(x * S), Y: Math.round(y * S) };
-      var outer = paths.filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0 && ClipperLib.Clipper.PointInPolygon(pt, pp) !== 0; });
-      if (!outer.length) return [];
-      return paths.filter(function (pp) {
-        return outer.indexOf(pp) >= 0 || (ClipperLib.Clipper.Area(pp) < 0 && ClipperLib.Clipper.PointInPolygon(pp[0], outer[0]) !== 0);
-      });
+    if (!I.length) throw new Error('the outline is too small for the wall thickness');
+    var nT = Math.max(1, Math.ceil(sw / STEP - 1e-9)), hT = sw / nT, cav = [];
+    for (var k = 0; k < nT; k++) cav.push(P(offset(I, -(k + 1) * hT)));
+    var NB = P(inter(rect(-bw, yB0, bw, L + 10), O));
+    // screw holes / wells: their circles may cross the outline or block
+    // edges (a short pocket near a rounded neck end): split both
+    var holeR = [], wellR = [];
+    holes.forEach(function (h) {
+      holeR = holeR.concat(circle(h[0], h[1], hr, 24));
+      if (wells) wellR = wellR.concat(circle(h[0], h[1], p.wellDiameterMm / 2, 48));
+    });
+    function splitWith(cir) {
+      if (!cir.length) return cir;
+      var m;
+      m = mutualSplit(O, cir); O = m[0]; cir = m[1];
+      m = mutualSplit(I, cir); I = m[0]; cir = m[1];
+      m = mutualSplit(NB, cir); NB = m[0]; cir = m[1];
+      for (var q = 0; q < cav.length; q++) { m = mutualSplit(cav[q], cir); cav[q] = m[0]; cir = m[1]; }
+      return cir;
     }
-    var tailPt = [0, tbl / 2], neckPt = [0, L - pl / 2];
-    var Tz = pick(inter(IB, rect(-BIG / S, -50, BIG / S, tbl)), tailPt[0], tailPt[1]);
-    var Tuz = pick(inter(I, union(Kt, Kw)), tailPt[0], tailPt[1]);
-    var Nz = pick(inter(IB, rect(-BIG / S, L - bl, BIG / S, L + 50)), neckPt[0], neckPt[1]);
-    var Nuz = pick(inter(I, K), neckPt[0], neckPt[1]);
-    var Tf = pick(inter(Ib, rect(-BIG / S, -50, BIG / S, tbl - bc)), tailPt[0], tailPt[1]);
-    var Tuf = pick(inter(Ib, union(rect(-tw + bc, -50, tw - bc, tbl - bc), p.tailBolts >= 2 ? rect(-BIG / S, web0, BIG / S, web1 - bc) : [])), tailPt[0], tailPt[1]);
-    var Nf = pick(inter(Ib, rect(-BIG / S, L - bl + bc, BIG / S, L + 50)), neckPt[0], neckPt[1]);
-    var Nuf = pick(inter(Ib, rect(-kw + bc, L - bl + bc, kw - bc, L + 50)), neckPt[0], neckPt[1]);
-
-    // features: { z0, z1, void }
-    var F = [];
-    function addF(z0, z1, v) { if (z1 - z0 > 1e-6 && v.length) F.push({ z0: z0, z1: z1, v: v }); }
-    // Panel channels. Each panel edge sits in a channel whose back is the
-    // wall's inside face, all the way round the outline, with a flat lip of
-    // thickness lip on each face of the panel, reaching cD in over it. The
-    // back is the mirror of the top: the inner lip (over the back panel,
-    // under the top panel) stops where a block stands on / under the
-    // panel instead. No chamfers: printed back face down, the underside
-    // of each lip above a gap (both lips of the top channel, the upper lip
-    // of the back channel) is a flat cD-wide ledge off the wall, and the
-    // channel is channelSagMm taller than panel + fit so a little droop
-    // is fine.
-    // void(r) = the opening with the lips reaching r.
-    var memo = {};
-    function shrink(base, key, r) {
-      r = Math.round(r * 1000) / 1000;
-      var k2 = key + r;
-      if (!memo[k2]) memo[k2] = r > 0 ? P(offset(base, -r)) : base;
-      return memo[k2];
+    holeR = splitWith(holeR);
+    wellR = splitWith(wellR);
+    holeR = splitWith(holeR); // pick up points the wells added
+    if (areaMm2(diff(wells ? wellR : holeR, O)) > 0.05) warnings.push('The neck screw ' + (wells ? 'wells' : 'holes') + ' break out through the neck end; move them in (hole spacing along the neck).');
+    var pocket = rect(-ph, yP0, ph, L + 10);
+    if (Math.abs(areaMm2(inter(pocket, O)) - 2 * ph * Math.min(pl, L)) > 0.02 * 2 * ph * pl + 1) {
+      warnings.push('The neck pocket is wider than the neck end of this outline; it breaks out through the sides.');
     }
-    // back: bottom lip on the bed, channel, upper lip (not under the blocks)
-    addF(0, zBL, shrink(IB, 'B', cD));
-    addF(zBL, zBS, IB);
-    addF(zBS, zBU, union(shrink(IB, 'B', cD), Tz, Nz));
-    // middle: the halves are just the wall here
-    addF(zBU, zTA, I);
-    // the flat lip under the top panel (none over the neck and tail
-    // blocks, whose tops carry the panel)
-    addF(zTA, zTS0, union(shrink(I, 'I', cD), Tuz, Nuz));
-    // top channel and the top lip
-    addF(zTS0, zTS1, I);
-    addF(zTS1, D, shrink(I, 'I', cD));
-    // neck pocket (the notch in the neck end wall)
-    addF(zF, D, pocket);
-    // features of the separate blocks: { z0, z1, void }
-    var NB = [], TB = [];
-    function addN(z0, z1, v) { if (z1 - z0 > 1e-6 && v.length) NB.push({ z0: z0, z1: z1, v: v }); }
-    function addT(z0, z1, v) { if (z1 - z0 > 1e-6 && v.length) TB.push({ z0: z0, z1: z1, v: v }); }
-    var neckTop = collarOn ? zF : zTS0;
-    if (!collarOn) addN(zF, zTS0, pocket);
 
-    // neck screws
-    var yc = L - pl / 2;
-    var sx = p.neckScrewSpanXIn * IN / 2, sy = p.neckScrewSpanYIn * IN / 2;
-    var screws = [[-sx, yc - sy], [sx, yc - sy], [-sx, yc + sy], [sx, yc + sy]];
-    var rs = p.neckScrewHoleMm / 2, rw = p.wellDiameterMm / 2;
-    var screwHoles = union.apply(null, screws.map(function (q) { return circle(q[0], q[1], rs, 32); }));
-    var wellTop = zBS, plasticUnderPocket, wellsCut = false;
-    if (p.neckScrewMode === 'wells') {
-      var zW = zF - p.wellFloorMm;
-      if (zW - zBS < 4) { warnings.push('Screw wells need at least ' + (p.wellFloorMm + 4).toFixed(0) + ' mm of neck block under the pocket floor; this body has ' + (zF - zBS).toFixed(1) + ' mm, so the wells were left out.'); zW = zBS; }
-      if (zW > zBS) {
-        wellsCut = true;
-        addN(zBS, zW, union.apply(null, screws.map(function (q) { return circle(q[0], q[1], rw, 32); })));
-        // 45-degree staircase roof from the well down to the screw hole
-        var zc = zW;
-        gridBands(zW, zW + (rw - rs)).forEach(function (band) {
-          var r = rw - (band[1] - zW);
-          if (r < rs + 0.05) r = rs;
-          addN(band[0], band[1], union.apply(null, screws.map(function (q) { return circle(q[0], q[1], r, 32); })));
-          zc = band[1];
-        });
-        wellTop = zc;
-      }
-      plasticUnderPocket = zF - zW;
-    } else {
-      plasticUnderPocket = zF - zBS;
-    }
-    addN(wellTop, zF, screwHoles);
+    var solids = [], voids = [];
+    function S_(z0, z1, reg) { if (z1 - z0 > 1e-6 && reg.length) solids.push({ z0: z0, z1: z1, reg: reg }); }
+    function V_(z0, z1, reg) { if (z1 - z0 > 1e-6 && reg.length) voids.push({ z0: z0, z1: z1, reg: reg }); }
+    var ring = diff(O, I);
+    S_(0, p.floorMm, O);                                   // back floor
+    S_(p.floorMm, zTaper0, ring);                          // plain wall
+    for (k = 0; k < nT; k++) S_(zTaper0 + k * hT, zTaper0 + (k + 1) * hT, diff(O, cav[k])); // 45-degree taper
+    S_(zShelf - lip, zShelf, diff(O, cav[nT - 1]));        // shelf's straight edge, glue surface on top
+    S_(zShelf, D, ring);                                   // wall round the top panel
+    S_(0, zShelf, NB);                                     // neck block
+    V_(zF, D + 1, pocket);
+    V_(-1, zF, holeR);
+    if (wells) V_(-1, zWell, wellR);
 
-    // ---- neck collar: the neck block above the pocket floor (the pocket's
-    // side and end walls) as a separate U-shaped part. Vertical bolts come
-    // up from counterbored wells in the underside of the neck block into
-    // nut traps (or heat-set inserts) in the collar, so the neck screws
-    // still clamp only the solid lower block.
-    var collar = null, collarRegions = null, collarLevels = null, collarBase = null, collarInfo = null;
-    if (collarOn) {
-      var clr = p.collarClearanceMm;
-      collarBase = diff(inter(rect(-kw + clr, L - bl + clr, kw - clr, L + 50), P(offset(I, -clr))), pocket);
-      var rSnug = (bolt.nomMm + 0.2) / 2;
-      var hexR = (bolt.nutAFMm + 0.4) / Math.sqrt(3);   // corner radius of the nut trap
-      var rSpotN = bolt.washerMm / 2 + 0.5;
-      var needR = p.collarFastener === 'insert' ? bolt.insertHoleMm / 2 + 2.0 : hexR + 1.6;
-      // the bolt's counterbored well in the neck block must stay inside
-      // the block too (it is its own part now, no wall around it)
-      var inner = offset(collarBase, -Math.max(needR, bolt.washerMm / 2 + 1 + 0.8));
-      var cands = [];
-      var endY = L - pl - p.neckBlockEndMm / 2;
-      function inside(paths, x, y) {
-        var pt = { X: Math.round(x * S), Y: Math.round(y * S) }, wind = 0;
-        paths.forEach(function (path) {
-          if (ClipperLib.Clipper.PointInPolygon(pt, path) !== 0) wind += ClipperLib.Clipper.Area(path) > 0 ? 1 : -1;
-        });
-        return wind > 0;
-      }
-      ['left', 'right'].forEach(function (side) {
-        var sg = side === 'right' ? 1 : -1;
-        // beside the pocket: start 30% of the pocket in from the neck end
-        // and move towards the body until the wall is wide enough (a
-        // cutaway narrows the treble wall near the neck end), keeping
-        // clear of a sideways neck bolt
-        var best = null;
-        var fyMax = Math.max(0.85, (bl - needR - clr - 1) / pl);
-        for (var fy = 0.3; fy <= fyMax + 1e-9 && !best; fy += 0.05) {
-          var y = L - fy * pl;
-          if (p.neckBolts >= 1 && Math.abs(y - (L - pl / 2)) < rSpotN + needR + 1.5) continue;
-          var edge = kw;
-          for (var s3 = -1; s3 <= 1.0001; s3 += 0.1) edge = Math.min(edge, nearEdge(sh, y + s3 * needR, side, pw2) - p.wallMm - p.collarClearanceMm);
-          var x = sg * (pw2 + edge) / 2;
-          // keep its counterbore well clear of the neck screws' holes/wells
-          var rScr = p.neckScrewMode === 'wells' ? rw : rs, rBw = bolt.washerMm / 2 + 1;
-          if (screws.some(function (q) { return Math.hypot(q[0] - x, q[1] - y) < rScr + rBw + 2; })) continue;
-          if (inside(inner, x, y)) best = { x: x, y: y };
-        }
-        cands.push({ side: side, where: 'beside the pocket', x: best ? best.x : sg * (pw2 + kw) / 2, y: best ? best.y : L - 0.3 * pl });
-        cands.push({ side: side, where: 'behind the pocket', x: sg * Math.max(pw2 * 0.55, needR + 1), y: endY });
-      });
-      var cb = cands.filter(function (c) { return inside(inner, c.x, c.y); });
-      cands.forEach(function (c) {
-        if (cb.indexOf(c) < 0) warnings.push('No room for the ' + c.side + ' collar bolt ' + c.where + '; it was left out.');
-      });
-      ['left', 'right'].forEach(function (side) {
-        if (!cb.some(function (c) { return c.side === side; })) warnings.push('The neck collar has no bolt into the ' + side + ' half; widen the neck block.');
-      });
-      var cHoles = cb.length ? union.apply(null, cb.map(function (c) { return circle(c.x, c.y, rSnug, 32); })) : [];
-      // in the neck block: snug holes from its underside (or from
-      // counterbored wells) up to the pocket floor
-      var floorC = Math.min(12, zF - zBS - 6), seatZ = zBS;
-      var rWc = bolt.washerMm / 2 + 1;
-      if (floorC >= 8 && cb.length) {
-        var zWc = zF - floorC;
-        addN(zBS, zWc, union.apply(null, cb.map(function (c) { return circle(c.x, c.y, rWc, 32); })));
-        seatZ = zWc;
-        gridBands(zWc, zWc + (rWc - rSnug)).forEach(function (band) {
-          var r = rWc - (band[1] - zWc);
-          if (r < rSnug + 0.05) r = rSnug;
-          addN(band[0], band[1], union.apply(null, cb.map(function (c) { return circle(c.x, c.y, r, 32); })));
-        });
-      }
-      addN(seatZ, zF, cHoles);
-      // in the collar
-      var CF = [];
-      function addC(z0, z1, v) { if (z1 - z0 > 1e-6 && v.length) CF.push({ z0: z0, z1: z1, v: v }); }
-      var H = zTS0 - zF, boltMin, boltMax, collarTop = zTS0;
-      if (p.collarFastener === 'insert') {
-        var rI = bolt.insertHoleMm / 2, zI = zF + Math.min(bolt.insertLenMm + 1.5, H - 4);
-        addC(zF, zI, union.apply(null, cb.map(function (c) { return circle(c.x, c.y, rI, 32); })));
-        var zz = zI;
-        gridBands(zI, zI + rI).forEach(function (band) {
-          var r = rI - (band[1] - zI);
-          if (r <= 0.05) return;
-          addC(band[0], band[1], union.apply(null, cb.map(function (c) { return circle(c.x, c.y, r, 24); })));
-          zz = band[1];
-        });
-        boltMin = (zF - seatZ) + bolt.washerTMm + 0.6 * bolt.insertLenMm;
-        boltMax = (zF - seatZ) + bolt.washerTMm + (zI - zF) - 0.3;
+    // ---- optional back access opening with a 45-degree tapered recess
+    var acc = null, cover = null, coverSt = null;
+    if (p.accessPanel) {
+      var cw = p.coverThicknessMm, ringTop = Math.max(cw + p.accessRingHeightMm, p.floorMm + 1);
+      var cy = clamp(p.accessPos, 0.1, 0.9) * L;
+      var opPts = roundedRect(0, cy, p.accessWidthMm, p.accessLengthMm, p.accessCornerMm, 10);
+      var Op = [toPath(opPts)];
+      var ringOuter = offset(Op, cw + p.accessRingMm);
+      var why = null;
+      if (areaMm2(diff(ringOuter, offset(I, -1))) > 0.05) why = 'its ring runs into the wall';
+      else if (areaMm2(inter(ringOuter, offset(rect(-bw, yB0, bw, L + 10), 2))) > 0.05) why = 'it runs into the neck block';
+      else if (ringTop > zTaper0 - 1) why = 'the body is too shallow for its ring under the shelf';
+      if (why) {
+        warnings.push('Access opening left out: ' + why + '. Make it smaller or move it (position along the body).');
       } else {
-        var zN = zF + Math.min(p.collarNutFloorMm, H - bolt.nutMm - 2);
-        addC(zF, zN, cHoles);
-        addC(zN, zTS0, union.apply(null, cb.map(function (c) {
-          var hp = [];
-          for (var h = 0; h < 6; h++) hp.push([c.x + hexR * Math.cos(h * Math.PI / 3), c.y + hexR * Math.sin(h * Math.PI / 3)]);
-          return [toPath(hp)];
-        })));
-        boltMin = (zF - seatZ) + bolt.washerTMm + (zN - zF) + bolt.nutMm + 1;
-        boltMax = (zF - seatZ) + bolt.washerTMm + H - 0.5;   // must stay under the top panel
-      }
-      var boltLen = null;
-      for (var bi = 0; bi < METRIC_LENGTHS.length; bi++) if (METRIC_LENGTHS[bi] >= boltMin - 1e-9) { boltLen = METRIC_LENGTHS[bi]; break; }
-      var boltNote = '';
-      if (boltLen === null || boltLen > boltMax + 1e-9) {
-        boltNote = 'No stock length fits between ' + boltMin.toFixed(1) + ' and ' + boltMax.toFixed(1) + ' mm; cut a longer bolt to ' + Math.ceil(boltMin) + ' mm.';
-      }
-      // collar slabs (its own part; z kept in body coordinates here)
-      var clv = [zF, zTS0];
-      CF.forEach(function (f) { clv.push(f.z0, f.z1); });
-      clv = clv.map(function (z) { return Math.round(z * S); }).sort(function (a, b) { return a - b; });
-      collarLevels = [];
-      clv.forEach(function (z) { if (!collarLevels.length || z > collarLevels[collarLevels.length - 1]) collarLevels.push(z); });
-      var CFi = CF.map(function (f) { return { z0: Math.round(f.z0 * S), z1: Math.round(f.z1 * S), v: f.v }; });
-      collarRegions = [];
-      for (var ck = 0; ck + 1 < collarLevels.length; ck++) {
-        var cv = [];
-        CFi.forEach(function (f) { if (f.z0 <= collarLevels[ck] && f.z1 >= collarLevels[ck + 1]) cv = cv.concat(f.v); });
-        collarRegions.push(cleanSpikes(cv.length ? diff(collarBase, union(cv)) : collarBase));
-      }
-      collar = meshSlabs(collarLevels, collarRegions);
-      var cbb = bbox(collarBase);
-      collarInfo = {
-        fastener: p.collarFastener === 'insert' ? 'insert' : 'nut',
-        bolts: cb.map(function (c) { return { side: c.side, where: c.where, x: c.x, y: c.y }; }),
-        heightMm: H, bottomZ: zF, topZ: zTS0, footprintMm: [cbb[2] - cbb[0], cbb[3] - cbb[1]],
-        sizeXYMm: cbb, holeMm: 2 * rSnug, nutTrapAFMm: bolt.nutAFMm + 0.4,
-        seatZ: seatZ, wells: seatZ > zBS, wellMm: 2 * rWc, boltLengthMm: boltLen, boltMinMm: boltMin, boltMaxMm: boltMax, boltNote: boltNote,
-        clearanceMm: p.collarClearanceMm, areaMm2: areaMm2(collarBase)
-      };
-    }
-
-    if (boltZ - rSpot < zBU + 0.5 || boltYs.some(function (b) { return b.low && b.z + rSpot * Math.SQRT2 > baseTop - 0.8; })) {
-      warnings.push('The block slabs (' + slabH.toFixed(1) + ' mm) are too thin for ' + bolt.label + ' bolts clear of the back channel; raise "Block slab height".');
-    }
-    if (p.tailBolts < 1) warnings.push('No tail bolt: nothing holds the two halves together at the tail, so the tail joint can open under string tension. Keep at least one tail bolt.');
-    var boltInfo = [];
-    // Each washer seat is a flat cut square to the bolt; where the wall
-    // curves (the tail) a flat seat would cut right through a 3 mm wall, so
-    // each half has a boss behind every seat: the wall filled in out to
-    // bossBack mm behind the seat face, over the seat's height, growing out
-    // from the wall in a 45-degree corbel that starts from a flat lip-wide
-    // ledge on the back channel's upper face. The block has a matching
-    // straight notch the full height of its side, so the boss slides in as
-    // the half closes and bears flat on the block's notch face.
-    var KP = [], CUT = [];
-    function addK(z0, z1, v) { if (z1 - z0 > 1e-6 && v.length) KP.push({ z0: z0, z1: z1, v: v }); }
-    function addX(z0, z1, v) { if (z1 - z0 > 1e-6 && v.length) CUT.push({ z0: z0, z1: z1, v: v }); }
-    var bossInfo = [], byY = {};
-    boltYs.forEach(function (b) { var key = b.y.toFixed(4); (byY[key] = byY[key] || []).push(b); });
-    Object.keys(byY).forEach(function (key) {
-      var bs = byY[key], b = bs[0];
-      var top = Math.min(zTA, Math.max.apply(null, bs.map(function (q) { return q.z + rSpot * Math.SQRT2 + 1.5; })));
-      var seatLow = Math.min.apply(null, bs.map(function (q) { return q.z - rSpot; }));
-      var isNeck = /neck/.test(b.name);
-      [[rect(b.xs - bossBack, b.y - bossHalf, b.xe, b.y + bossHalf), rect(b.xs - bossBack - bc, b.y - bossHalf - bc, BIG / S, b.y + bossHalf + bc)],
-       [rect(-b.xeL, b.y - bossHalf, -(b.xsL - bossBack), b.y + bossHalf), rect(-BIG / S, b.y - bossHalf - bc, -(b.xsL - bossBack - bc), b.y + bossHalf + bc)]].forEach(function (rr, si) {
-        var full = inter(I, rr[0]);
-        if (!full.length) return;
-        var z = zBS, r = cD, guard = 0;
-        while (guard++ < 200) {
-          var part = diff(full, shrink(I, 'I', r));
-          if (areaMm2(diff(full, part)) < 0.01) break;
-          addK(z, z + STEP, part);
-          z += STEP; r += STEP;
+        var nC = Math.max(1, Math.ceil(cw / STEP - 1e-9)), hC = cw / nC;
+        // screw circle: about half way across the bevel, nudged so no hole
+        // edge grazes a bevel step (that would pinch the mesh)
+        var dBest = cw / 2, gapBest = -1;
+        for (var dd = cw * 0.35; dd <= cw * 0.65; dd += 0.01) {
+          var gap = Infinity;
+          for (k = 0; k <= nC; k++) {
+            [cw - k * hC, cw - k * hC - p.coverFitMm].forEach(function (o) {
+              [p.coverScrewHoleMm / 2, p.coverScrewClearMm / 2].forEach(function (r) {
+                gap = Math.min(gap, Math.abs(dd + r - o), Math.abs(dd - r - o));
+              });
+            });
+          }
+          if (gap > gapBest + 1e-9) { gapBest = gap; dBest = dd; }
         }
-        addK(z, top, full);
-        bossInfo.push({ bolt: b.name, side: si ? 'left' : 'right', fullFromZ: z, seatLowZ: seatLow, topZ: top, maxReachMm: r });
-        if (z > seatLow + 1e-6) warnings.push('The ' + (si ? 'left' : 'right') + ' washer seat of the ' + b.name + ' bolt is not fully backed at its lowest ' + (z - seatLow).toFixed(1) + ' mm; raise "Block slab height".');
-        var notch = rr[1];
-        if (isNeck) addN(zBS, neckTop, notch); else addT(zBS, zTS0, notch);
-      });
-    });
-    boltYs.forEach(function (b) {
-      b.hole.forEach(function (hb) {
-        var band = rect(-b.xeL, b.y - hb.half, b.xe, b.y + hb.half);
-        addX(hb.z0, hb.z1, band); addN(hb.z0, hb.z1, band); addT(hb.z0, hb.z1, band);
-      });
-      b.spot.forEach(function (sb) {
-        addX(sb.z0, sb.z1, union(rect(b.xs, b.y - sb.half, b.xe, b.y + sb.half), rect(-b.xeL, b.y - sb.half, -b.xsL, b.y + sb.half)));
-      });
-      var grip = b.xs + b.xsL;
-      var len = grip + 2 * bolt.washerTMm + bolt.nutMm + 2;
-      boltInfo.push({ name: b.name, yMm: b.y, zMm: b.z, gripMm: grip, minLengthMm: len });
-    });
-
-    // ---- slab levels and regions
-    var lv = [0, D];
-    F.concat(KP, CUT).forEach(function (f) { lv.push(f.z0, f.z1); });
-    lv = lv.map(function (z) { return Math.round(z * S); });
-    lv.sort(function (a, b) { return a - b; });
-    var levels = [];
-    lv.forEach(function (z) { if (z >= 0 && z <= Math.round(D * S) && (!levels.length || z > levels[levels.length - 1])) levels.push(z); });
-    function toInt(list) { return list.map(function (f) { return { z0: Math.round(f.z0 * S), z1: Math.round(f.z1 * S), v: f.v }; }); }
-    var Fi = toInt(F), Ki = toInt(KP), Ci = toInt(CUT);
-    var solid = [];
-    for (var k = 0; k + 1 < levels.length; k++) {
-      var a0 = levels[k], a1 = levels[k + 1], voids = [], keeps = [], cuts = [];
-      Fi.forEach(function (f) { if (f.z0 <= a0 && f.z1 >= a1) voids = voids.concat(f.v); });
-      Ki.forEach(function (f) { if (f.z0 <= a0 && f.z1 >= a1) keeps = keeps.concat(f.v); });
-      Ci.forEach(function (f) { if (f.z0 <= a0 && f.z1 >= a1) cuts = cuts.concat(f.v); });
-      var vv = union(voids);
-      if (keeps.length) vv = diff(vv, union(keeps));
-      if (cuts.length) vv = union(vv, cuts);
-      solid.push(diff(O, vv));
-    }
-
-    var topPanel0 = diff(offset(I, -ec), pocket);
-    var capFoot = [], capSide = null, capRegions = null, capLevels = null, cap = null, capInfo = null;
-    if (capBox) {
-      capSide = capBox.side;
-      var ring = diff(O, shrink(I, 'I', cD));
-      capFoot = inter(ring, capSide === 'right' ? rect(0, capBox.y, capBox.x, L + 50) : rect(capBox.x, capBox.y, 0, L + 50));
-      // only the piece(s) carrying the walls in the way (the box can clip
-      // a corner of some other part of the ring)
-      capFoot = capFoot.filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0 && areaMm2(inter([pp], capBox.hit)) > 0.01; });
-    }
-    if (capFoot.length) {
-      var zc0 = Math.round(zTS0 * S);
-      capLevels = []; capRegions = [];
-      for (k = 0; k + 1 < levels.length; k++) {
-        if (levels[k] < zc0) continue;
-        if (!capLevels.length) capLevels.push(levels[k]);
-        capLevels.push(levels[k + 1]);
-        capRegions.push(cleanSpikes(inter(solid[k], capFoot)));
-        solid[k] = diff(solid[k], capFoot);
+        var mid = pathsToMm(offset(Op, dBest))[0];
+        var screwPts = pointsAlong(mid, Math.max(0, Math.round(p.coverScrews)));
+        // the screw holes cross the bevel steps: split both at the crossings
+        function splitAll(bands, r) {
+          var hole = [];
+          screwPts.forEach(function (q) { hole = hole.concat(circle(q[0], q[1], r, 16)); });
+          bands = bands.map(function (b) { var m = mutualSplit(b, hole); hole = m[1]; return m[0]; });
+          bands = bands.map(function (b) { return mutualSplit(b, hole)[0]; });
+          return { bands: bands, hole: hole };
+        }
+        var cone = [];
+        for (k = 0; k < nC; k++) cone.push(offset(Op, cw - k * hC));
+        var sp = splitAll(cone, p.coverScrewHoleMm / 2);
+        S_(0, ringTop, ringOuter);
+        V_(-1, ringTop + 1, Op);
+        for (k = 0; k < nC; k++) V_(k === 0 ? -1 : k * hC, (k + 1) * hC, sp.bands[k]);
+        V_(-1, ringTop + 1, sp.hole);
+        // the cover: the same staircase bevel, coverFit smaller all round,
+        // printed outer (back) face down: it only narrows going up
+        var cBands = [];
+        for (k = 0; k < nC; k++) cBands.push(offset(Op, cw - k * hC - p.coverFitMm));
+        var cs = splitAll(cBands, p.coverScrewClearMm / 2);
+        var cSolids = [], cVoids = [];
+        for (k = 0; k < nC; k++) cSolids.push({ z0: k * hC, z1: (k + 1) * hC, reg: cs.bands[k] });
+        if (cs.hole.length) cVoids.push({ z0: -1, z1: cw + 1, reg: cs.hole });
+        coverSt = stack(cSolids, cVoids);
+        coverSt.regions = tidy(coverSt.regions, [], [], 4);
+        cover = meshSlabs(coverSt.levels, coverSt.regions);
+        var outer = pathsToMm(offset(Op, cw - p.coverFitMm));
+        var obx = bbox(offset(Op, cw - p.coverFitMm));
+        acc = {
+          opening: pathsToMm(Op), openingMm: [p.accessWidthMm, p.accessLengthMm], cornerMm: p.accessCornerMm, centerY: cy,
+          recessDepthMm: cw, seatWidthMm: cw, taperDeg: 45, steps: nC, stepMm: hC, ringTop: ringTop, ringWidthMm: p.accessRingMm,
+          screws: screwPts.map(function (q) { return { x: q[0], y: q[1] }; }), screwHoleMm: p.coverScrewHoleMm, screwClearMm: p.coverScrewClearMm,
+          cover: { thicknessMm: cw, fitMm: p.coverFitMm, outline: outer, topOutline: pathsToMm(offset(Op, hC - p.coverFitMm)),
+            sizeMm: [obx[2] - obx[0], obx[3] - obx[1]], thicknessAtScrewsMm: cw - dBest, screwInsetMm: dBest }
+        };
       }
-      // print it upside down (its top face on the bed): flip z
-      cap = meshSlabs(capLevels, capRegions);
-      var cbx = bbox(capFoot);
-      capInfo = { side: capSide, bottomZ: zTS0, topZ: D, heightMm: D - zTS0, footprintMm: [cbx[2] - cbx[0], cbx[3] - cbx[1]],
-        sizeXYMm: cbx, areaMm2: areaMm2(capFoot), seatAreaMm2: areaMm2(capRegions[0]), wallSeatMm: p.wallMm, lipOnPanelMm: cD };
     }
 
-    // ---- halves
-    var leftHP = leftHPFn(), rightHP = rightHPFn();
-    // Booleans where an offset curve grazes a straight cut can land a
-    // vertex a micron or two off the cut line, or two vertices a micron
-    // apart, differently in neighbouring slabs (a T-junction the mesher
-    // can't close). Across all slabs of one part: snap such vertices onto
-    // the split lines and merge near-twins into the one more slabs share.
+    // ---- slabs -> one watertight mesh
+    var st = mergeSame(stack(solids, voids));
     var SXs = SX.slice().sort(function (a, b) { return a - b; }), SYs = SY.slice().sort(function (a, b) { return a - b; });
-    function tidy(regs) {
-      var TOL = 2;
-      function snapTo(v, lines) {
-        var lo = 0, hi = lines.length - 1;
-        while (lo < hi) { var mid = (lo + hi) >> 1; if (lines[mid] < v - TOL) lo = mid + 1; else hi = mid; }
-        return lines.length && Math.abs(lines[lo] - v) <= TOL ? lines[lo] : v;
-      }
-      var cnt = new Map();
-      regs = regs.map(function (paths) {
-        return paths.map(function (path) {
-          return path.map(function (q) {
-            var v = { X: snapTo(q.X, SXs), Y: snapTo(q.Y, SYs) };
-            var key = v.X + ',' + v.Y;
-            cnt.set(key, (cnt.get(key) || 0) + 1);
-            return v;
-          });
-        });
-      });
-      // near-twins: cluster every vertex within TOL of another (chains
-      // too) and use one point per cluster, the one most slabs share
-      var keys = Array.from(cnt.keys()), parent = new Map();
-      function find(k) { while (parent.get(k) !== k) { parent.set(k, parent.get(parent.get(k))); k = parent.get(k); } return k; }
-      keys.forEach(function (k) { parent.set(k, k); });
-      keys.forEach(function (k) {
-        var xy = k.split(',').map(Number);
-        for (var dx = -TOL; dx <= TOL; dx++) for (var dy = -TOL; dy <= TOL; dy++) {
-          if (!dx && !dy) continue;
-          var k2 = (xy[0] + dx) + ',' + (xy[1] + dy);
-          if (parent.has(k2)) { var r1 = find(k), r2 = find(k2); if (r1 !== r2) parent.set(r1, r2); }
-        }
-      });
-      var best = new Map();
-      keys.forEach(function (k) {
-        var r = find(k), b = best.get(r);
-        if (!b || cnt.get(k) > cnt.get(b) || (cnt.get(k) === cnt.get(b) && k < b)) best.set(r, k);
-      });
-      return regs.map(function (paths) {
-        return cleanSpikes(paths.map(function (path) {
-          var res = [];
-          path.forEach(function (v) {
-            var xy = best.get(find(v.X + ',' + v.Y)).split(',').map(Number), w = { X: xy[0], Y: xy[1] };
-            var last = res[res.length - 1];
-            if (!last || last.X !== w.X || last.Y !== w.Y) res.push(w);
-          });
-          while (res.length > 1 && res[0].X === res[res.length - 1].X && res[0].Y === res[res.length - 1].Y) res.pop();
-          return res;
-        }));
-      });
-    }
-    var leftRegions = tidy(solid.map(function (r) { return cleanSpikes(inter(r, leftHP)); }));
-    var rightRegions = tidy(solid.map(function (r) { return cleanSpikes(inter(r, rightHP)); }));
-    var left = meshSlabs(levels, leftRegions);
-    var right = meshSlabs(levels, rightRegions);
+    var regions = tidy(st.regions, SXs, SYs);
+    var body = meshSlabs(st.levels, regions);
 
-    // ---- the separate neck and tail blocks (body coordinates; each
-    // prints standing on its underside, z = zBS)
-    function slabPart(foot, voids) {
-      var zl = [];
-      foot.forEach(function (f) { zl.push(f.z0, f.z1); });
-      var zLo = Math.round(foot[0].z0 * S), zHi = Math.round(foot[foot.length - 1].z1 * S);
-      voids.forEach(function (f) { zl.push(f.z0, f.z1); });
-      zl = zl.map(function (z) { return Math.round(z * S); }).filter(function (z) { return z >= zLo && z <= zHi; }).sort(function (a, b) { return a - b; });
-      var lvs = [];
-      zl.forEach(function (z) { if (!lvs.length || z > lvs[lvs.length - 1]) lvs.push(z); });
-      var Fo = foot.map(function (f) { return { z0: Math.round(f.z0 * S), z1: Math.round(f.z1 * S), v: f.v }; });
-      var Vo = voids.map(function (f) { return { z0: Math.round(f.z0 * S), z1: Math.round(f.z1 * S), v: f.v }; });
-      var regs = [];
-      for (var q = 0; q + 1 < lvs.length; q++) {
-        var base = [], vv = [];
-        Fo.forEach(function (f) { if (f.z0 <= lvs[q] && f.z1 >= lvs[q + 1]) base = base.concat(f.v); });
-        Vo.forEach(function (f) { if (f.z0 <= lvs[q] && f.z1 >= lvs[q + 1]) vv = vv.concat(f.v); });
-        regs.push(cleanSpikes(vv.length ? diff(union(base), union(vv)) : union(base)));
-      }
-      regs = tidy(regs);
-      return { levels: lvs, regions: regs, mesh: meshSlabs(lvs, regs) };
-    }
-    // (a shallow body's pocket floor can be below the slab top: the neck
-    // block then stops at the floor and the collar sits on it)
-    var neckSlabTop = Math.min(baseTop, neckTop);
-    var neckPart = slabPart(neckSlabTop < neckTop - 1e-6 ? [{ z0: zBS, z1: neckSlabTop, v: Nf }, { z0: neckSlabTop, z1: neckTop, v: Nuf }] : [{ z0: zBS, z1: neckTop, v: Nf }], NB);
-    var tailPart = slabPart([{ z0: zBS, z1: baseTop, v: Tf }, { z0: baseTop, z1: zTS0, v: Tuf }], TB);
+    // ---- top panel (ply): the rim's inside face less the fit, with the pocket notch
+    var topReg = diff(offset(I, -p.topFitMm), pocket);
+    var tbx = bbox(topReg), obb = bbox(O);
+    var glueW = sw - p.topFitMm;
 
-    // ---- overhang audit: downward faces above the bed. The flat lip
-    // undersides are the only intended flat ledges (cD wide); everything
-    // else is a 45-degree staircase.
-    var maxLedge = 0, downArea = 0, roofLedge = 0;
-    var roofZ = [Math.round(zBS * S), Math.round(zTA * S), Math.round(zTS1 * S)];
-    function ledgeOf(dn) {
-      // widest ledge: grow an inward offset until the region vanishes
-      var w = 0;
-      while (w < 50 && offset(dn, -(w + 0.05)).length) w += 0.05;
-      return 2 * w;
-    }
-    [leftRegions, rightRegions].forEach(function (regs) {
-      for (k = 1; k < levels.length - 1; k++) {
-        var dn = diff(regs[k], regs[k - 1]);
-        if (!dn.length) continue;
-        downArea += areaMm2(dn) / 2;
-        var lw = ledgeOf(dn);
-        if (roofZ.indexOf(levels[k]) >= 0) roofLedge = Math.max(roofLedge, lw);
-        else maxLedge = Math.max(maxLedge, lw);
-      }
-    });
-    if (capRegions) {
-      // printed upside down: a downward face is where a slab sticks out
-      // past the one above it (in body coordinates)
-      for (k = capRegions.length - 2; k >= 0; k--) {
-        var dnp = diff(capRegions[k], capRegions[k + 1]);
-        if (!dnp.length) continue;
-        downArea += areaMm2(dnp);
-        maxLedge = Math.max(maxLedge, ledgeOf(dnp));
-      }
-    }
-    [neckPart, tailPart].forEach(function (pt) {
-      for (var q = 1; q < pt.regions.length; q++) {
-        var dnb = diff(pt.regions[q], pt.regions[q - 1]);
-        if (!dnb.length) continue;
-        downArea += areaMm2(dnb);
-        maxLedge = Math.max(maxLedge, ledgeOf(dnb));
-      }
-    });
-    if (collarRegions) {
-      for (k = 1; k < collarRegions.length; k++) {
-        var dnc = diff(collarRegions[k], collarRegions[k - 1]);
-        if (!dnc.length) continue;
-        downArea += areaMm2(dnc);
-        maxLedge = Math.max(maxLedge, ledgeOf(dnc));
-      }
-    }
+    // ---- neck screws
+    var stackMm = wells ? { washerMm: 1.5, blockMm: p.wellFloorMm, biteMm: p.screwBiteMm }
+      : { plateMm: p.plateThicknessMm, blockMm: zF, biteMm: p.screwBiteMm };
+    var screwMm = (stackMm.washerMm || 0) + (stackMm.plateMm || 0) + stackMm.blockMm + stackMm.biteMm;
+    var screwIn = screwLengthIn(screwMm);
 
-    // ---- panels (1:1 outlines, mm)
-    // The back panel covers the whole outline like the top one, with
-    // holes for what passes through it at the neck block: the neck screws
-    // (clearance holes for the back plate, or the size of the wells so the
-    // heads go in) and the heads of the collar bolts.
-    var topPanel = topPanel0;
-    var backHoles = [];
-    screws.forEach(function (q) {
-      backHoles.push({ what: wellsCut ? 'neck screw well' : 'neck screw', x: q[0], y: q[1], dMm: wellsCut ? 2 * rw : 2 * rs });
-    });
-    if (collarInfo && collarInfo.wells) collarInfo.bolts.forEach(function (c) {
-      backHoles.push({ what: 'collar bolt head', x: c.x, y: c.y, dMm: collarInfo.wellMm });
-    });
-    var backPanel = backHoles.length ? diff(offset(IB, -ec), union.apply(null, backHoles.map(function (h) { return circle(h.x, h.y, h.dMm / 2, 48); }))) : offset(IB, -ec);
-
-    // ---- checks and warnings
-    var bed = p.bedMm;
-    // a part needs ~2 mm of bed to spare (skirt / first-layer squish)
-    var bedFit = L <= bed - BED_MARGIN && maxHw <= bed - BED_MARGIN;
-    var diag = null;
-    if (L > bed - BED_MARGIN) {
-      // will each half fit corner to corner? (best rotation of its footprint)
-      diag = Math.max(squareFit(halfPoly(outline, 1)), squareFit(halfPoly(outline, -1)));
-      warnings.push('Body length ' + (L / IN).toFixed(2) + '″ leaves under ' + BED_MARGIN + ' mm to spare on the ' + (bed / IN).toFixed(2) + '″ print bed. ' +
-        (diag <= bed - BED_MARGIN ? 'Each half fits turned corner to corner (needs a ' + (diag / IN).toFixed(2) + '″ square); ' : 'Each half needs a ' + (diag / IN).toFixed(2) + '″ square even turned diagonally; ') +
-        'otherwise use a bigger bed, cut each half in two, or scale the body down.');
-    }
-    if (maxHw >= bed) warnings.push('A half is ' + (maxHw / IN).toFixed(2) + '″ wide, more than the print bed.');
-    if (p.neckScrewMode === 'wells' && plasticUnderPocket < 19) warnings.push('Only ' + plasticUnderPocket.toFixed(1) + ' mm of printed floor between the screw wells and the pocket; 19 mm or more recommended.');
-    if (zTA < baseTop - 1e-6) warnings.push('The body is too shallow for the block slabs and the top channel; increase the depth.');
-    if (sx + rs > pw2 - 2 || sy + rs > pl / 2 - 2) warnings.push('The neck screw pattern does not fit inside the neck pocket.');
-    if (cD > 5) warnings.push('Each channel lip is a flat ' + cD.toFixed(1) + ' mm ledge with nothing under it while printing; past about 5 mm it droops. 4 mm is the default.');
-    if (cD - ec < 2.5) warnings.push('Only ' + (cD - ec).toFixed(1) + ' mm of each panel edge is held; a lip overlap of 4 mm (3.5 mm held) or more holds the panels firmly.');
-    if (lip < 1.6) warnings.push('Channel lips under 1.6 mm thick are fragile; 2 mm is the default.');
-
-    // screws: plate mode = plate + back panel + the whole block under the
-    // pocket; wells = washer + the printed floor over the wells
-    var wellsUsed = wellsCut;
-    var throughMm = wellsUsed ? plasticUnderPocket : zF - zBS;
-    var underHead = throughMm + (wellsUsed ? 1.5 : p.plateThicknessMm + t); // washer, or plate + back panel, under the head
-    var screwMm = underHead + p.screwBiteMm;
-    // the shortest common wood-screw length that gives the wanted bite
-    var STD = [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3, 3.5, 4, 4.5, 5, 6];
-    var minBite = Math.max(10, p.screwBiteMm - 6), maxBite = p.screwBiteMm + 3;
-    var screwIn = STD[STD.length - 1];
-    for (var si = 0; si < STD.length; si++) if (STD[si] * IN - underHead >= minBite) { screwIn = STD[si]; break; }
-    var biteMm = screwIn * IN - underHead;
-    var screwNote = '';
-    if (biteMm > maxBite) {
-      screwNote = 'Add ' + Math.ceil(biteMm - p.screwBiteMm) + ' mm of washers under the ' + (wellsUsed ? 'screw heads' : 'plate') +
-        ' (or shorten the screws) so they reach only ' + p.screwBiteMm.toFixed(0) + ' mm into the neck.';
-    }
-
-    var lpanelBox = bbox(topPanel), bpanelBox = bbox(backPanel);
-
-    var groups = { left: left, right: right };
-    groups.neckBlock = neckPart.mesh;
-    groups.tailBlock = tailPart.mesh;
-    if (collar) groups.collar = collar;
-    if (cap) groups.cap = cap;
     var meta = {
-      params: p,
-      lengthMm: L, widthMm: maxL + maxR, depthMm: D, requestedDepthMm: Dreq, minDepthMm: Dmin,
-      halfFootprintMm: [maxHw, L], leftFootprintMm: [maxL, L], rightFootprintMm: [maxR, L],
-      symmetric: sh.kind !== 'tstyle', cutawaySide: sh.cutawaySide || null,
-      halfHeightMm: D, fitsBed: bedFit, diagonalSquareMm: diag, bedMm: bed,
-      panelTopZ: panelTopZ, pocketFloorZ: zF, topSlot: [zTS0, zTS1], bottomSlot: [zBL, zBS],
-      baseTopMm: baseTop, slabHeightMm: baseTop - zBS,
-      neckBlock: { lengthMm: bl, widthMm: 2 * kw, bottomZ: zBS, topZ: neckTop, heightMm: neckTop - zBS, slabTopZ: neckSlabTop, footprintMm: (function (b) { return [b[2] - b[0], b[3] - b[1]]; })(bbox(Nf)) },
-      tailBlock: { lengthMm: tbl, widthMm: 2 * tw, bottomZ: zBS, topZ: zTS0, heightMm: zTS0 - zBS, slabTopZ: baseTop, web: p.tailBolts >= 2 ? [0, web1] : null, footprintMm: (function (b) { return [b[2] - b[0], b[3] - b[1]]; })(bbox(Tf)) },
-      blockClearanceMm: bc, bosses: bossInfo,
-      backFloor: floorBox ? { side: floorBox.side, x: floorBox.x, y: floorBox.y, areaMm2: areaMm2(inter(I, floorRect)), topZ: zBU } : null,
-      pocket: { lengthMm: pl, widthMm: 2 * pw2, depthMm: panelTopZ - zF, floorZ: zF },
-      plasticUnderPocketMm: plasticUnderPocket,
-      neckScrews: screws.map(function (q) { return { x: q[0], y: q[1] }; }),
-      neckScrewStack: wellsUsed ? { washerMm: 1.5, blockMm: throughMm } : { plateMm: p.plateThicknessMm, backPanelMm: t, blockMm: throughMm },
-      neckScrewThroughMm: throughMm, neckScrewLengthIn: screwIn, neckScrewNeedMm: screwMm, neckScrewBiteMm: biteMm, neckScrewWells: wellsUsed, neckScrewNote: screwNote,
-      bolts: boltInfo, boltSize: bolt.label, collar: collarInfo, cap: capInfo,
-      panels: {
-        top: { outline: pathsToMm(topPanel), sizeMm: [lpanelBox[2] - lpanelBox[0], lpanelBox[3] - lpanelBox[1]], areaMm2: areaMm2(topPanel) },
-        back: { outline: pathsToMm(backPanel), holes: backHoles, sizeMm: [bpanelBox[2] - bpanelBox[0], bpanelBox[3] - bpanelBox[1]], areaMm2: areaMm2(backPanel) },
-        topZ: [zTS0, zTS0 + t], backZ: [zBL, zBL + t]
-      },
-      overhang: { downFacingAreaMm2: downArea, widestLedgeMm: Math.max(maxLedge, roofLedge), stairLedgeMm: maxLedge, channelRoofLedgeMm: roofLedge },
-      channel: { depthMm: cD, engagementMm: cD - ec, lipMm: lip, heightMm: hC, fitMm: fit, sagMm: hC - t - fit,
-        topRimMm: topRim, topLowerLipZ: zTA, backLipTopZ: zBU, backSlot: [zBL, zBS], topSlotZ: [zTS0, zTS1] },
-      levels: levels.length, outline: outline,
-      triangles: { left: left.length / 9, right: right.length / 9, neckBlock: neckPart.mesh.length / 9, tailBlock: tailPart.mesh.length / 9, collar: collar ? collar.length / 9 : 0, cap: cap ? cap.length / 9 : 0 }
+      style: p.style, shape: sh.kind, lengthMm: size[1], widthMm: size[0], depthMm: D, L: L,
+      naturalLengthMm: natural[1], naturalWidthMm: natural[0], outlineScale: scale, scaled: scale < 1 - 1e-9,
+      bedMm: p.bedMm, bedMarginMm: p.bedMarginMm, bedLimitMm: bedLimit, fitsBed: fitsBed,
+      wallMm: p.wallMm, floorMm: p.floorMm,
+      shelf: { zTop: zShelf, dropMm: t + al, allowanceMm: al, widthMm: sw, glueWidthMm: glueW, lipMm: lip,
+        taperBottomZ: zTaper0, taperHeightMm: sw, taperDeg: 45, steps: nT, stepMm: hT, thicknessAtWallMm: lip + sw },
+      topPanel: { outline: pathsToMm(topReg), sizeMm: [tbx[2] - tbx[0], tbx[3] - tbx[1]], thicknessMm: t, z0: zShelf, z1: zShelf + t,
+        topSurfaceZ: topSurf, belowRimMm: al, fitMm: p.topFitMm, areaMm2: areaMm2(topReg) },
+      pocket: { lengthMm: pl, widthMm: 2 * ph, depthMm: pocketDepth, floorZ: zF, y0: yP0, y1: L, square: true },
+      neckBlock: { x0: -bw, x1: bw, y0: yB0, y1: L, heightMm: zShelf, footprintMm: [2 * bw, L - yB0], plasticUnderPocketMm: zF },
+      neckScrews: { holes: holes.map(function (h) { return { x: h[0], y: h[1] }; }), holeMm: p.neckScrewHoleMm, wells: wells,
+        wellTopZ: wells ? zWell : null, wellDiameterMm: p.wellDiameterMm, stack: stackMm, lengthMm: screwMm, lengthIn: screwIn,
+        note: wells ? 'Washers or ferrules sit at the top of each well, ' + p.wellFloorMm + ' mm of block under the pocket floor.'
+          : 'The plate goes on the back face; the screws pass the ' + p.floorMm + ' mm floor and the solid block (' + zF.toFixed(1) + ' mm in all).' },
+      access: acc,
+      overhang: { stairStepMm: Math.max(hT, acc ? acc.stepMm : 0), bridges: wells ? 'flat round roofs of the ' + p.wellDiameterMm + ' mm screw wells' : 'none' },
+      outlineBox: obb,
+      triangles: { body: body.length / 9, cover: cover ? cover.length / 9 : 0 }
     };
-    return { groups: groups, meta: meta, warnings: warnings,
-      slabs: { levels: levels, left: leftRegions, right: rightRegions, collar: collarRegions, collarLevels: collarLevels, cap: capRegions, capLevels: capLevels,
-        neckBlock: neckPart.regions, neckBlockLevels: neckPart.levels, tailBlock: tailPart.regions, tailBlockLevels: tailPart.levels } };
+    return {
+      body: body, cover: cover, meta: meta, warnings: warnings,
+      slabs: { levels: st.levels, body: regions, coverLevels: coverSt ? coverSt.levels : null, cover: coverSt ? coverSt.regions : null }
+    };
   }
 
-  // Is (x, y, z) (mm) inside the printed material of one half?
-  // half = 'left' | 'right'. Used by the tests and handy for debugging.
-  // half = 'collar' for the neck collar (body coordinates).
-  function solidAt(result, half, x, y, z) {
-    var lv = result.slabs[half + 'Levels'] || result.slabs.levels, zi = z * S, k;
-    if (!lv) return false;
+  // Is (x, y, z) (mm) inside the printed material? part = 'body' | 'cover'.
+  function solidAt(result, part, x, y, z) {
+    part = part || 'body';
+    var lv = part === 'cover' ? result.slabs.coverLevels : result.slabs.levels, regs = result.slabs[part], zi = z * S, k;
+    if (!lv || !regs) return false;
     for (k = 0; k + 1 < lv.length; k++) if (zi >= lv[k] && zi < lv[k + 1]) break; // on a level: the slab above
     if (k + 1 >= lv.length) return false;
     var pt = { X: Math.round(x * S), Y: Math.round(y * S) }, wind = 0;
-    result.slabs[half][k].forEach(function (path) {
+    regs[k].forEach(function (path) {
       if (ClipperLib.Clipper.PointInPolygon(pt, path) !== 0) wind += ClipperLib.Clipper.Area(path) > 0 ? 1 : -1;
     });
     return wind > 0;
@@ -1671,9 +1237,10 @@
     return s.join('\n') + '\n';
   }
 
+
   var api = {
-    IN: IN, DEFAULTS: DEFAULTS, STYLES: STYLES, STYLE_KEYS: STYLE_KEYS, STYLE_FIELDS: STYLE_FIELDS, BOLTS: BOLTS,
-    STEP_MM: STEP, WALL_MIN_MM: WALL_MIN,
+    IN: IN, DEFAULTS: DEFAULTS, STYLES: STYLES, STYLE_KEYS: STYLE_KEYS, STYLE_FIELDS: STYLE_FIELDS,
+    STEP_MM: STEP, WALL_MIN_MM: WALL_MIN, FLOOR_MIN_MM: FLOOR_MIN_MM, OUTLINE_KEYS: OUTLINE_KEYS,
     styleParams: styleParams, matchStyle: matchStyle, withDefaults: withDefaults,
     shapeOf: shapeOf, halfWidth: halfWidth, outlinePoints: outlinePoints, tstyleProportions: tstyleProportions, flipZ: flipZ,
     build: build, solidAt: solidAt, panelMesh: panelMesh, panelSVG: panelSVG, panelDXF: panelDXF,
