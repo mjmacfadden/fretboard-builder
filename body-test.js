@@ -113,10 +113,12 @@ function grow(paths, d) {
 // Print-orientation overhang audit on the slab stack (z up from the bed):
 // material in each slab may reach at most `step` mm past the slab under
 // it. Returns the unsupported patches [{z, area}].
+// A slab may reach one STEP past the one below (45 degrees). The 0.05 mm
+// slack covers Clipper's 0.03 mm arc tolerance on curved offsets.
 function overhangs(levels, regions, step) {
   const bad = [];
   for (let k = 1; k < regions.length; k++) {
-    const un = clip(ClipperLib.ClipType.ctDifference, regions[k], grow(regions[k - 1], step + 0.02));
+    const un = clip(ClipperLib.ClipType.ctDifference, regions[k], grow(regions[k - 1], step + 0.05));
     const a = area(un);
     if (a > 0.05) bad.push({ z: levels[k] / S, area: a, paths: un });
   }
@@ -164,8 +166,9 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   assert.strictEqual(B.DEFAULTS.pocketWidthIn, 1.5, 'A: pocket 1.5in wide');
   assert.strictEqual(B.DEFAULTS.pocketDepthIn, 0.9, 'A: pocket floor 0.9in down');
   assert.strictEqual(B.DEFAULTS.pocketCornerMm, 6.35, 'A: pocket corners 1/4in radius');
-  assert.strictEqual(B.DEFAULTS.pocketWallMm, 6, 'A: 6 mm pocket side walls');
-  assert.strictEqual(B.DEFAULTS.pocketEndWallMm, 8, 'A: 8 mm pocket end wall');
+  assert.strictEqual(B.BLOCK_WALL_MM, 8, 'A: solid neck block, 8 mm round the pocket');
+  ['pocketWallMm', 'pocketEndWallMm', 'pocketFloorMm', 'ribMm', 'bossWallMm', 'tieHeightMm'].forEach(k =>
+    assert.ok(!(k in B.DEFAULTS), `A: shell-block parameter ${k} removed`));
   assert.strictEqual(B.DEFAULTS.neckScrewMode, 'plate', 'A: back plate (no wells) by default');
   assert.strictEqual(B.DEFAULTS.bedMarginMm, 5, 'A: 5 mm bed margin');
   assert.strictEqual(B.DEFAULTS.wallMm, 3, 'A: 3 mm walls');
@@ -198,8 +201,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
         const tag = `B: ${k} access=${acc} ${mode}`;
         assert.strictEqual(edgeErrors(r.body), 0, `${tag}: body watertight`);
         assert.strictEqual(outerShells(r.body), 1, `${tag}: body is one piece`);
-        const cells = r.meta.neckBlock.cells ? r.meta.neckBlock.cells.count : 0;
-        assert.strictEqual(innerShells(r.body), cells, `${tag}: the only other shells are the ${cells} sealed cells under the pocket`);
+        assert.strictEqual(innerShells(r.body), 0, `${tag}: no inner shells (solid neck block, no cells)`);
         assert.ok(signedVolume(r.body) > 0, `${tag}: outward normals`);
         const b = bounds(r.body);
         approx(b[2], 0, 1e-6, `${tag}: back face on the bed`);
@@ -219,7 +221,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   const right = build('t-style-false-plate');
   const bl = bounds(lefty.body), br = bounds(right.body);
   approx(bl[0], -br[3], 0.05, 'B: lefty mirrors the outline');
-  console.log(`Body B ok: ${n} builds + lefty, every body one watertight piece on the bed (plus its sealed cells), covers watertight`);
+  console.log(`Body B ok: ${n} builds + lefty, every body one watertight piece on the bed (no inner cells), covers watertight`);
 }
 
 // === Body C: bed fit, outline-only scaling ==================================
@@ -441,23 +443,34 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   console.log('Body J ok: wall / floor minimums, depth raised for the pocket, screw-hole warnings');
 }
 
-// === Body L: the neck block is a ribbed shell, not a solid lump ============
+// === Body L: the neck block is solid (the slicer does the infill) ==========
 {
   B.STYLE_KEYS.forEach(k => {
     const r = build(`${k}-false-plate`, P(k)), m = r.meta, nb = m.neckBlock, pk = m.pocket;
     const hw = pk.widthMm / 2, y0 = pk.y0, L = m.L, yc = L - pk.lengthMm / 2, zm = (pk.floorZ + m.shelf.zTop) / 2;
-    assert.strictEqual(nb.footprintPieces, 1, `L: ${k} walls and ties are one connected piece`);
-    assert.ok(nb.pocketWallMm >= 2 && nb.pocketEndWallMm >= 2 && nb.ribMm >= 2 && nb.bossWallMm >= 2 && nb.pocketFloorMm >= 2, `L: ${k} every block wall at least 2 mm`);
-    // pocket walls tw thick, side and end, up to the shelf
-    const tw = nb.pocketWallMm, ew = nb.pocketEndWallMm;
-    assert.ok(solid(r, hw + tw - 0.2, yc + 5, zm) && solid(r, 0, y0 - ew + 0.2, zm), `L: ${k} ${tw} mm side walls, ${ew} mm end wall`);
-    approx(nb.y0, y0 - ew, 1e-6, `L: ${k} block ends at the end wall`);
+    assert.ok(nb.solid && !('cells' in nb), `L: ${k} solid neck block, no cells`);
+    assert.strictEqual(nb.footprintPieces, 1, `L: ${k} block is one connected piece`);
+    const tw = nb.wallAroundPocketMm, ew = tw;
+    approx(tw, 8, 1e-9, `L: ${k} 8 mm round the pocket`);
+    assert.ok(solid(r, hw + tw - 0.2, yc + 5, zm) && solid(r, 0, y0 - ew + 0.2, zm), `L: ${k} ${tw} mm side walls and end wall`);
+    approx(nb.y0, y0 - ew, 1e-6, `L: ${k} block ends 8 mm behind the pocket`);
+    // solid all the way down under the pocket floor, except the screw holes
+    [m.floorMm + 0.5, (m.floorMm + pk.floorZ) / 2, pk.floorZ - 0.3].forEach(z => [[hw / 2, yc + 8], [-hw / 2, yc - 8], [0, yc], [0, y0 - 3]].forEach(([x, y]) =>
+      assert.ok(solid(r, x, y, z), `L: ${k} solid under the pocket at (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`)));
+    m.neckScrews.holes.forEach(h => assert.ok(!solid(r, h.x, h.y, (m.floorMm + pk.floorZ) / 2), `L: ${k} neck screw hole open through the block`));
+    assert.ok(!solid(r, 0, yc, pk.floorZ + 0.5), `L: ${k} pocket open above its floor`);
     // no gussets: nothing behind the end wall, at any height
     [m.floorMm + 0.5, m.floorMm + 2, zm].forEach(z => [0, hw, hw + tw - 1, -hw].forEach(x =>
       assert.ok(!solid(r, x, y0 - ew - 0.3, z) && !solid(r, x, y0 - ew - 10, z), `L: ${k} hollow behind the end wall at x=${x.toFixed(1)}, z=${z.toFixed(1)}`)));
     if (!nb.filledSides.includes('right')) {
       assert.ok(!solid(r, hw + tw + 0.3, yc + 5, zm), `L: ${k} hollow outside the side wall`);
       assert.ok(!nb.ribs && !nb.neckBrace && !solid(r, hw + tw + 1, yc, m.floorMm + 1), `L: ${k} no neck block brace with neck block ribs off (the default)`);
+    }
+    // wells mode: solid block, wells open from the back
+    if (k === 'parlor') {
+      const rw = build('parlor-false-wells'), ns = rw.meta.neckScrews;
+      assert.ok(ns.wells, 'L: parlor wells mode');
+      ns.holes.forEach(h => { assert.ok(!B.solidAt(rw, 'body', h.x, h.y, ns.wellTopZ - 0.5), 'L: well open'); assert.ok(B.solidAt(rw, 'body', h.x + ns.wellDiameterMm / 2 + 0.5, h.y, ns.wellTopZ - 0.5), 'L: solid round the well'); });
     }
     // ribs on: ONE brace straight across the body at mid-pocket, the
     // ladder-brace profile over the full inside width (tallest on the
@@ -484,35 +497,20 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     assert.ok(X0 < -hw - tw - 20, `L: ${k} neck brace reaches out towards the bass rim`);
     // continuous arc: inside the shell the profile would be taller than at the walls
     assert.ok(nbr.heightCentreMm > Math.max.apply(null, nbr.heightAtShellMm) - 1e-9, `L: ${k} the pocket interrupts the tallest part of the arc`);
-    // under the pocket: solid floor plate, then cells between ribs and screw bosses
-    const c = nb.cells;
-    assert.ok(c && c.count === 4, `L: ${k} four sealed cells under the pocket`);
-    assert.ok(solid(r, hw / 2, yc + 8, pk.floorZ - nb.pocketFloorMm + 0.2), `L: ${k} solid plate under the pocket floor`);
-    const zc = (c.bottomZ + c.roofStartZ) / 2;
-    assert.ok(!solid(r, hw / 2, yc + 8, zc) && !solid(r, -hw / 2, yc - 8, zc), `L: ${k} cells are hollow`);
-    assert.ok(solid(r, 0, yc + 8, zc) && solid(r, hw / 2, yc, zc), `L: ${k} centre rib and cross rib`);
-    m.neckScrews.holes.forEach(h => {
-      assert.ok(!solid(r, h.x, h.y, zc), `L: ${k} screw hole runs through its boss`);
-      const d = m.neckScrews.holeMm / 2 + nb.bossWallMm - 0.3;
-      assert.ok(solid(r, h.x, h.y + d, zc) && solid(r, h.x, h.y - d, zc), `L: ${k} ${nb.bossDiameterMm.toFixed(1)} mm boss round the hole`);
-    });
-    assert.ok(m.volume.neckBlockCm3 > 50 && m.volume.neckBlockCm3 < 200, `L: ${k} neck block ${m.volume.neckBlockCm3.toFixed(0)} cm3 (a solid block was 190-480)`);
+    assert.ok(m.volume.neckBlockCm3 > 90, `L: ${k} solid neck block ${m.volume.neckBlockCm3.toFixed(0)} cm3`);
   });
   const t = build('t-style-false-plate').meta.neckBlock, lefty = build('t-lefty').meta.neckBlock;
   assert.deepStrictEqual(t.filledSides, ['right'], 'L: T-Style treble-side gap to the rim filled solid');
   assert.deepStrictEqual(lefty.filledSides, ['left'], 'L: lefty T-Style fills the other side');
-  assert.deepStrictEqual(build('parlor-false-plate').meta.neckBlock.filledSides, [], 'L: parlor: no gap fill (ties both sides when ribs are on)');
+  assert.deepStrictEqual(build('parlor-false-plate').meta.neckBlock.filledSides, [], 'L: parlor: no gap fill');
   const tr = build('t-style-ribs', P('t-style', { neckBlockRibs: true })).meta.neckBlock;
   assert.deepStrictEqual(tr.filledSides, ['right'], 'L: T-Style treble fill stays with ribs on');
   const pr = build('parlor-ribs').meta.neckBlock.neckBrace;
   approx(pr.heightAtShellMm[0], pr.heightAtShellMm[1], 0.05, 'L: parlor neck brace symmetric');
   assert.strictEqual(pr.segments.length, 1, 'L: parlor neck brace one run rim to rim');
   const par = build('parlor-false-plate').meta.volume;
-  assert.ok(par.totalCm3 < 650, `L: parlor body ${par.totalCm3.toFixed(0)} cm3 (847 with the solid block)`);
-  const thin = B.build(P('parlor', { pocketWallMm: 1, ribMm: 1 }));
-  assert.ok(thin.meta.neckBlock.pocketWallMm === 2 && thin.meta.neckBlock.ribMm === 2 && thin.warnings.some(w => /thinner than 2 mm/.test(w)), 'L: block walls clamped to 2 mm');
-  assert.strictEqual(edgeErrors(thin.body), 0, 'L: thinnest shell watertight');
-  console.log(`Body L ok: ${build('parlor-false-plate').meta.neckBlock.pocketWallMm} mm shell walls, ${build('parlor-false-plate').meta.neckBlock.pocketEndWallMm} mm end wall, no gussets, one neck block brace (ribs on: ${build('parlor-ribs').meta.neckBlock.neckBrace.heightAtShellMm[0].toFixed(1)} mm at the pocket walls), gap fill kept, ${build('parlor-false-plate').meta.neckBlock.bossDiameterMm.toFixed(1)} mm bosses, 4 sealed cells; parlor ${par.totalCm3.toFixed(0)} cm3 total`);
+  assert.ok(par.totalCm3 > 650 && par.totalCm3 < 750, `L: parlor body ${par.totalCm3.toFixed(0)} cm3 with the solid block`);
+  console.log(`Body L ok: solid neck block (pocket + ${B.BLOCK_WALL_MM} mm all round, no cells), no gussets, screw holes and wells open, one neck block brace (ribs on: ${build('parlor-ribs').meta.neckBlock.neckBrace.heightAtShellMm[0].toFixed(1)} mm at the block), T-Style treble fill kept; parlor ${par.totalCm3.toFixed(0)} cm3 total`);
 }
 
 // === Body M: neck block ribs, ladder braces, screw-on top ===================
@@ -525,6 +523,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     const tag = `M: ${k} access=${acc} ribs=${ribs} braces=${br} screwTop=${st}`;
     assert.strictEqual(edgeErrors(r.body), 0, `${tag}: body watertight`);
     assert.strictEqual(outerShells(r.body), 1, `${tag}: one piece`);
+    assert.strictEqual(innerShells(r.body), 0, `${tag}: no inner cells`);
     if (r.cover) assert.strictEqual(edgeErrors(r.cover), 0, `${tag}: cover watertight`);
     const bad = minusScrewCrescents(r, overhangs(r.slabs.levels, r.slabs.body, B.STEP_MM));
     assert.strictEqual(bad.length, 0, `${tag}: support-free ${JSON.stringify(bad.map(b => [b.z, b.area]))}`);
@@ -706,7 +705,6 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
       lengthIn: base.lengthIn * (0.85 + rnd() * 0.3), depthIn: 1.4 + rnd() * 2.6, wallMm: 2 + rnd() * 4, floorMm: 2 + rnd() * 3,
       shelfWidthMm: 4 + rnd() * 6, shelfLipMm: 0.8 + rnd() * 2.5, shelfAllowanceMm: rnd() * 0.6,
       pocketLengthIn: 2 + rnd() * 1.2, pocketWidthIn: 1.25 + rnd() * 0.6, pocketCornerMm: rnd() * 10,
-      pocketWallMm: 2 + rnd() * 8, ribMm: 2 + rnd() * 3, pocketFloorMm: 2 + rnd() * 8, pocketEndWallMm: 2 + rnd() * 8,
       neckScrewMode: rnd() < 0.5 ? 'plate' : 'wells', accessPanel: rnd() < 0.6, accessLengthMm: 60 + rnd() * 80, accessWidthMm: 40 + rnd() * 60,
       accessCornerMm: 5 + rnd() * 25, accessPos: 0.2 + rnd() * 0.3, coverThicknessMm: 2.5 + rnd() * 3, coverScrews: Math.floor(rnd() * 7),
       leftHanded: rnd() < 0.5, neckBlockRibs: rnd() < 0.5, ladderBraces: rnd() < 0.7, braceCount: 1 + Math.floor(rnd() * 4),
@@ -716,6 +714,8 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     });
     const r = B.build(p);
     assert.strictEqual(edgeErrors(r.body), 0, `K: random body ${i} (${k}) watertight`);
+    assert.strictEqual(outerShells(r.body), 1, `K: random body ${i} (${k}) one piece`);
+    assert.strictEqual(innerShells(r.body), 0, `K: random body ${i} (${k}) no inner cells`);
     if (r.cover) assert.strictEqual(edgeErrors(r.cover), 0, `K: random cover ${i} (${k}) watertight`);
     assert.strictEqual(minusScrewCrescents(r, overhangs(r.slabs.levels, r.slabs.body, B.STEP_MM)).filter(b => !r.meta.neckScrews.wells || Math.abs(b.z - r.meta.neckScrews.wellTopZ) > 1e-3).length, 0,
       `K: random body ${i} (${k}) support-free`);

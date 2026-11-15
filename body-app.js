@@ -16,7 +16,7 @@
   var NUM_FIELDS = ['lengthIn', 'lowerWidthIn', 'waistWidthIn', 'upperWidthIn', 'widthIn', 'cornerRadiusIn',
     'depthIn', 'lowerPos', 'waistPos', 'upperPos', 'wallMm', 'floorMm', 'panelThicknessMm', 'shelfAllowanceMm',
     'shelfWidthMm', 'shelfLipMm', 'topFitMm', 'pocketLengthIn', 'pocketWidthIn', 'pocketDepthIn', 'pocketFitMm',
-    'pocketCornerMm', 'pocketWallMm', 'pocketEndWallMm', 'pocketFloorMm', 'ribMm', 'bossWallMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
+    'pocketCornerMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
     'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm', 'accessLengthMm', 'accessWidthMm',
     'accessCornerMm', 'accessPos', 'coverThicknessMm', 'coverFitMm', 'accessRingMm', 'accessRingHeightMm',
     'coverScrews', 'coverScrewHoleMm', 'coverScrewClearMm', 'bedMarginMm', 'braceCount', 'braceWidthMm', 'braceHeightMm',
@@ -139,10 +139,9 @@
     $('pocket-out').textContent = (pk.lengthMm / IN).toFixed(2) + '″ long × ' + (pk.widthMm / IN).toFixed(3) + '″ wide, ' + (pk.cornerRadiusMm === 0 ? 'square corners' : (Math.abs(pk.cornerRadiusMm - 6.35) < 1e-6 ? '¼″ (6.35 mm)' : pk.cornerRadiusMm.toFixed(2) + ' mm') + ' radius corners') + ', floor ' +
       (pk.depthMm / IN).toFixed(2) + '″ below the top surface (never scaled)';
     var nb = m.neckBlock;
-    $('block-out').textContent = 'integral ribbed shell, ' + fmtMm(nb.pocketWallMm) + ' side walls and ' + fmtMm(nb.pocketEndWallMm) + ' end wall from the back floor up to the shelf, ' + (nb.filledSides.length ? 'gap to the rim filled on the ' + nb.filledSides.join(' and ') + ' side, ' : '') +
-      (nb.neckBrace ? 'one brace across the body at mid-pocket (ladder-brace arc, ' + nb.neckBrace.heightAtShellMm.map(function (h) { return h.toFixed(1); }).join(' / ') + ' mm high at the pocket walls), ' : '') + fmtMm(nb.pocketFloorMm) + ' plate under the pocket floor' +
-      (nb.cells ? ' over ' + nb.cells.count + ' sealed cells with ' + fmtMm(nb.ribMm) + ' ribs and ' + nb.bossDiameterMm.toFixed(1) + ' mm screw bosses' : ' (solid below it)') +
-      '; ' + (nb.footprintMm[0] / IN).toFixed(2) + '″ × ' + (nb.footprintMm[1] / IN).toFixed(2) + '″; body ' + m.volume.totalCm3.toFixed(0) + ' cm³ (block ' + m.volume.neckBlockCm3.toFixed(0) + ' cm³)';
+    $('block-out').textContent = 'integral, solid: the pocket plus ' + fmtMm(nb.wallAroundPocketMm) + ' all round, from the back floor up to the shelf' + (nb.filledSides.length ? ', filled out to the rim on the ' + nb.filledSides.join(' and ') + ' side' : '') +
+      (nb.neckBrace ? '; one brace across the body at mid-pocket (ladder-brace arc, ' + nb.neckBrace.heightAtShellMm.map(function (h) { return h.toFixed(1); }).join(' / ') + ' mm high at the block)' : '') +
+      '; ' + (nb.footprintMm[0] / IN).toFixed(2) + '″ × ' + (nb.footprintMm[1] / IN).toFixed(2) + '″; body ' + m.volume.totalCm3.toFixed(0) + ' cm³ (block ' + m.volume.neckBlockCm3.toFixed(0) + ' cm³). In the slicer: 4+ walls and 30–40% gyroid in the block area.';
     var ns = m.neckScrews, stk = ns.stack;
     $('screws-out').textContent = '4 × #8 wood screws, ' + ns.lengthIn + '″ long (' + Math.round(stk.biteMm) + ' mm into the neck) ' +
       (ns.wells ? 'with washers or ferrules in ' + ns.wellDiameterMm + ' mm wells (' + fmtMm(stk.washerMm) + ' washer + ' + fmtMm(stk.blockMm) + ' block)'

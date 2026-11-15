@@ -8,9 +8,9 @@
  *     below its top edge, with a 45-degree tapered underside (no
  *     supports). A 1/8" (3.175 mm) plywood top drops into the rim and is
  *     glued onto the shelf, sitting flush (or a hair below) the rim edge;
- *   - an integral neck block rising from the floor: a stiff shell round
- *     the neck pocket (2.75" x 1.5", 1/4" corner radius, floor 0.9" below
- *     the top surface) with ribs, side ties and screw bosses, for a
+ *   - an integral, solid neck block rising from the floor round the neck
+ *     pocket (2.75" x 1.5", 1/4" corner radius, floor 0.9" below the top
+ *     surface; the slicer does the infill), for a
  *     screw-on wooden neck, held by four wood screws up through the back
  *     floor and the block (through a back plate, or from counterbored
  *     wells with washers / ferrules);
@@ -44,6 +44,7 @@
   var IN = 25.4;
   var S = 1000;          // Clipper works in integers: 1 unit = 1 micron
   var STEP = 0.4;        // staircase step (mm) for every printed overhang
+  var BLOCK_WALL_MM = 8; // solid neck block: wall round the pocket (sides and inner end)
   var ARC_TOL = 0.03 * S;
   var FLOOR_MIN = 15;    // mm of printed block kept under the neck pocket floor
   var WALL_MIN = 2.0;    // thinnest rim wall (five 0.4 mm perimeters)
@@ -76,11 +77,6 @@
     pocketDepthIn: 0.9,      // pocket floor below the top surface of the top panel
     pocketFitMm: 0.15,       // added to each side of the pocket width
     pocketCornerMm: 6.35,    // 1/4" radius on the pocket's two inner corners
-    pocketWallMm: 6.0,       // neck block shell: the pocket's side walls
-    pocketEndWallMm: 8.0,    // ... and its inner-end wall (a little thicker: nothing braces it from behind)
-    pocketFloorMm: 6.0,      // solid plate under the pocket floor, over the cells
-    ribMm: 3.0,              // ribs under the pocket and the side ties
-    bossWallMm: 3.0,         // wall round each neck screw hole (or well)
     neckBlockRibs: false,    // one brace across the body at the neck block, ladder-brace profile, the pocket shell cutting through it (off: the walls stand alone)
     neckScrewMode: 'plate',  // 'plate' (back plate on the back face) or 'wells' (washers / ferrules)
     neckScrewSpanXIn: 0.875, // hole spacing across the neck
@@ -1018,10 +1014,9 @@
     var ph = p.pocketWidthIn * IN / 2 + p.pocketFitMm, pl = p.pocketLengthIn * IN;
     var pr = clamp(p.pocketCornerMm, 0, ph - 0.5);
     if (pr < 0.5) pr = 0;                   // a sub-0.5 mm radius is a square corner
-    ['pocketWallMm', 'pocketEndWallMm', 'ribMm', 'bossWallMm', 'pocketFloorMm'].forEach(function (key) {
-      if (!(p[key] >= 2)) { warnings.push('Neck block walls thinner than 2 mm are too weak; ' + key + ' set to 2 mm.'); p[key] = 2; }
-    });
-    var tw = p.pocketWallMm, ew = p.pocketEndWallMm, rib = p.ribMm;
+    // solid neck block: the pocket plus BLOCK_WALL_MM all round (sides and
+    // inner end), floor to shelf; the slicer does the infill
+    var tw = BLOCK_WALL_MM, ew = BLOCK_WALL_MM;
     var yP0 = L - pl;                       // inner end of the pocket
     var yS0 = yP0 - ew;                     // outer face of the shell's end wall
     var xs = ph + tw;                       // outer face of the shell's side walls
@@ -1037,14 +1032,10 @@
       wells = false;
     }
     if (wells && 2 * sxs < p.wellDiameterMm + 1) warnings.push('The screw wells overlap across the neck; use a smaller well or wider hole spacing.');
-    var bossR = (wells ? p.wellDiameterMm : p.neckScrewHoleMm) / 2 + p.bossWallMm;
-    // side ties: where the shell's corner round meets its straight side, and mid-pocket
-    var yT0 = Math.min(yS0 + prO, yc - 1.5 * rib);
-    var tieBands = [[yT0, yT0 + rib], [yc - rib / 2, yc + rib / 2]];
 
     // ---- 2D regions (microns). Curves are presplit at every straight
     // cut line so booleans never invent crossing points.
-    var SX = [], SY = [yP0, yS0, yT0, yT0 + rib, yc - rib / 2, yc + rib / 2];
+    var SX = [], SY = [yP0, yS0, yS0 + prO, yc];
 
     // ---- screw-on top: tab sizes (placed further down, once the braces are known)
     var tScrew = TOP_SCREWS[p.topScrewSize], tabR = clamp(p.tabBossMm, 8, 16) / 2;
@@ -1091,7 +1082,7 @@
     }
     if (ribsOn) bTiers.forEach(function (t) { SY.push(yNB - t.hw, yNB + t.hw); });
     var xF = xs + 4 + p.wallMm;             // furthest a gap fill reaches (only where the rim is within 4 mm)
-    [ph, xs, rib / 2, xs - rib, xs - 0.5, xF].forEach(function (v) { SX.push(v, -v); });
+    [ph, xs, xs - 0.5, xF].forEach(function (v) { SX.push(v, -v); });
     SX = SX.map(function (v) { return Math.round(v * S); });
     SY = SY.map(function (v) { return Math.round(v * S); });
     function P(paths) { return presplit(paths, SX, SY); }
@@ -1119,13 +1110,11 @@
       var pt = { X: Math.round(x * S), Y: Math.round(y * S) };
       return paths.filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0 && ClipperLib.Clipper.PointInPolygon(pt, pp) !== 0; });
     }
-    // The neck block is a shell, not a lump: walls tw thick round the
-    // pocket (rising from the floor to the shelf, so the top is glued to
-    // them; the inner-end wall ew thick), tied into the rim at the neck
-    // end, with low ties out to the rim each side. Under the pocket a
-    // solid floor plate (pocketFloorMm) carries the neck; below it, ribs
-    // and four screw bosses run down to the back floor, and the cells
-    // between them close at 45 degrees under the plate (sealed, no supports).
+    // The neck block is solid: the pocket outline grown by BLOCK_WALL_MM
+    // (sides and inner end, rounded outer corners), from the back floor up
+    // to the shelf so the top is glued to it, tied into the rim at the
+    // neck end. Solid under the pocket floor. Walls and infill are left to
+    // the slicer (e.g. 4+ walls, 30-40% gyroid in this region).
     var shellOuter = inter(pocketShape(xs, yS0, pr > 0 ? pr + tw : 0), O);
     var blockFoot = shellOuter;
     var ties = [], filled = [];
@@ -1141,7 +1130,7 @@
             var a = pp[i], b = pp[(i + 1) % pp.length];
             if ((a[1] - yy) * (b[1] - yy) > 0 || a[1] === b[1]) continue;
             var x = (a[0] + (yy - a[1]) / (b[1] - a[1]) * (b[0] - a[0])) * sg;
-            if (x > xs - 1e-6) gap = Math.min(gap, x - xs);
+            if (x > ph + 0.5) gap = Math.min(gap, x - xs);   // (negative: the rim cuts into the block)
           }
         });
       });
@@ -1284,8 +1273,11 @@
               return [lo, hi];
             })());
             x0 = g.X0 * fq; x1 = g.X1 * fq;
-            x0 = g.rim0 && x0 < rl[0] + 0.3 ? rl[0] - 20 : Math.max(g.x0, x0);
-            x1 = g.rim1 && x1 > rl[1] - 0.3 ? rl[1] + 20 : Math.min(g.x1, x1);
+            // (also when it would stop at the segment end: that sits on the
+            // rim within a few microns, and a micron-thin sliver of cavity
+            // between the two is not meshable)
+            x0 = g.rim0 && x0 < Math.max(rl[0], g.x0) + 0.3 ? Math.min(rl[0], g.x0) - 20 : Math.max(g.x0, x0);
+            x1 = g.rim1 && x1 > Math.min(rl[1], g.x1) - 0.3 ? Math.max(rl[1], g.x1) + 20 : Math.min(g.x1, x1);
             if (x1 - x0 < 0.3) return;
           }
           else { var X = a * Math.sqrt(Math.max(0, 1 - (q - bEnd) / (bH - bEnd))); if (X < 0.3) return; x0 = xm - X; x1 = xm + X; }
@@ -1389,19 +1381,6 @@
       tabShapes = tabShapes.map(function (ts) { var r = allT.slice(at0, at0 + ts.length); at0 += ts.length; return r; });
     }
 
-    // cells under the pocket floor plate
-    var U = inter(pocket, I);
-    var bosses = [];
-    holes.forEach(function (h) { bosses = bosses.concat(circle(h[0], h[1], bossR, 48)); });
-    var ribsU = union(rect(-rib / 2, yP0 - 1, rib / 2, L + 10), rect(-ph - 1, yc - rib / 2, ph + 1, yc + rib / 2));
-    // (opened by 10 microns so no band is left pinched to a zero-width neck)
-    function opened(r, d) { return offset(offset(r, -d - 0.01), 0.01); }
-    var V0 = opened(diff(U, union(ribsU, bosses)), 0);
-    var cellBands = [V0];
-    for (k = 1; k < 400; k++) { var vk = opened(V0, k * STEP); if (!vk.length || areaMm2(vk) < 0.01) break; cellBands.push(vk); }
-    var zCellTop = zF - p.pocketFloorMm, zR0 = zCellTop - (cellBands.length) * STEP;
-    var cellsOn = V0.length > 0 && zR0 >= p.floorMm + 2;
-
     // screw holes / wells: their circles may cross the outline or block
     // edges (a short pocket near a rounded neck end): split both
     var holeR = [], wellR = [];
@@ -1448,12 +1427,6 @@
       V_(zShelf - tabHole, D + 1, pil);
     }
     V_(zF, D + 1, pocket);
-    if (cellsOn) {
-      V_(p.floorMm, zR0, V0);
-      for (k = 1; k < cellBands.length; k++) V_(zR0 + (k - 1) * STEP, zR0 + k * STEP, cellBands[k]);
-      // last band: the remaining sliver closes at zCellTop
-      V_(zR0 + (cellBands.length - 1) * STEP, zCellTop, opened(V0, (cellBands.length - 0.5) * STEP));
-    }
     V_(-1, zF, holeR);
     if (wells) V_(-1, zWell, wellR);
 
@@ -1566,10 +1539,10 @@
         opening: pathsToMm(union(I)), blockFootprint: pathsToMm(union(blockFoot)) },
       pocket: { lengthMm: pl, widthMm: 2 * ph, depthMm: pocketDepth, floorZ: zF, y0: yP0, y1: L, cornerRadiusMm: pr, outline: pathsToMm(pocket) },
       neckBlock: { x0: -xs, x1: xs, y0: yS0, y1: L, heightMm: zShelf, footprintMm: [2 * xs, L - yS0], plasticUnderPocketMm: zF,
-        pocketWallMm: tw, pocketEndWallMm: ew, ribMm: rib, bossWallMm: p.bossWallMm, bossDiameterMm: 2 * bossR, pocketFloorMm: p.pocketFloorMm,
+        solid: true, wallAroundPocketMm: tw,
         ribs: !!neckInfo, neckBrace: neckInfo, filledSides: filled,
         footprintPieces: union(blockFoot, ties).filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0; }).length,
-        cells: cellsOn ? { count: V0.filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0; }).length, bottomZ: p.floorMm, roofStartZ: zR0, topZ: zCellTop } : null },
+        slicerNote: 'Solid in the model: set walls and infill in the slicer, e.g. 4+ walls and 30-40% gyroid in the neck block (a modifier over this region).' },
       volume: { totalCm3: volTot / 1000, neckBlockCm3: volBlock / 1000 },
       fit: fit,
       braces: bOn && braceSegs.length ? { count: braceYs.length, positionsMm: braceYs, positionsPct: braceYs.map(function (y) { return 100 * y / L; }),
@@ -1700,7 +1673,7 @@
 
   var api = {
     IN: IN, DEFAULTS: DEFAULTS, TOP_SCREWS: TOP_SCREWS, STYLES: STYLES, STYLE_KEYS: STYLE_KEYS, STYLE_FIELDS: STYLE_FIELDS,
-    STEP_MM: STEP, WALL_MIN_MM: WALL_MIN, FLOOR_MIN_MM: FLOOR_MIN_MM, OUTLINE_KEYS: OUTLINE_KEYS,
+    BLOCK_WALL_MM: BLOCK_WALL_MM, STEP_MM: STEP, WALL_MIN_MM: WALL_MIN, FLOOR_MIN_MM: FLOOR_MIN_MM, OUTLINE_KEYS: OUTLINE_KEYS,
     styleParams: styleParams, matchStyle: matchStyle, withDefaults: withDefaults,
     shapeOf: shapeOf, halfWidth: halfWidth, outlinePoints: outlinePoints, tstyleProportions: tstyleProportions, flipZ: flipZ,
     build: build, solidAt: solidAt, panelMesh: panelMesh, panelSVG: panelSVG, panelDXF: panelDXF,

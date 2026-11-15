@@ -149,34 +149,28 @@ the fretboard builder.
   glue surface after the 0.3 mm top fit), has a 1.6 mm straight edge, and
   its underside is a **45° taper** back to the wall (0.4 mm staircase
   steps), so it prints without supports.
-- **Integral neck block, a ribbed shell** rather than a solid lump:
-  - **6 mm pocket side walls** and an **8 mm inner-end wall** (a little
-    thicker, as nothing braces it from behind) from the back floor up to
-    the shelf, so the top is glued to them too. Nothing runs tailward
-    past the end wall;
+- **Integral neck block, solid**: the pocket outline grown by **8 mm** all
+  round (sides and inner end, rounded outer corners: 54.4 × 77.8 mm on the
+  default pocket), from the back floor up to the shelf, so the top is glued
+  to it too, and solid under the pocket floor. Nothing runs tailward past
+  it, no gussets. The model is solid on purpose: **the slicer does the
+  infill** — set **4+ walls and 30–40% gyroid** in the neck block area
+  (a modifier over the block) and normal infill elsewhere. Where the rim
+  comes within 4 mm of the block, or cuts into it (the T-Style treble
+  side), that side is filled solid out to the rim.
   - optional **neck block ribs** (off by default): **one brace straight
     across the body** at mid-pocket, shaped like a ladder brace that the
     neck pocket interrupts. Its arc is worked out over the full inside
     width (7 mm wide, 12 mm tall on the centreline, falling along the same
-    parabola to 4.5 mm at each rim, rounded crown); the pocket shell is
-    solid through the middle, so each half meets the shell wall at the
-    height the full arc has there (about 11.2 mm on the parlor). It stays
-    under the shelf and clear of the screw-on top tabs, and stops short of
-    the access ring if that is in the way. With it off the pocket walls
-    stand alone. Either way, where the rim comes within 4 mm of the wall
-    (the T-Style treble side, about 10 mm) that gap is filled solid;
-  - under the pocket, a **6 mm solid plate** below the pocket floor. Beneath
-    it, a centreline rib and a cross rib (3 mm) and a **boss round each
-    neck screw hole** (3 mm wall: 10.6 mm across for the plate holes) run
-    down to the back floor. The four cells between them are sealed and
-    their roofs close in 45° staircases, so there are no bridges and no
-    supports.
-  - All of these are adjustable, with a 2 mm minimum. Each neck screw
-    clamps back plate, back floor, boss, plate and neck in one straight
-    line.
+    parabola to 4.5 mm at each rim, rounded crown); the block is solid
+    through the middle, so each half meets the block at the height the
+    full arc has there (about 11.4 mm on the parlor). It stays under the
+    shelf and clear of the screw-on top tabs, and stops short of the
+    access ring if that is in the way.
   - Plastic, with the defaults (braces on, ribs off, glued top): parlor
-    591 cm³, small dreadnought style 655, round 608, cigar-box style 561,
-    T-Style 520 cm³. (The parlor was 847 cm³ with the old solid block.)
+    694 cm³, small dreadnought style 772, round 698, cigar-box style 652,
+    license plate 530, T-Style 544 cm³ (the parlor was 591 cm³ with the
+    ribbed shell block).
 - **Ladder braces** (on by default) across the inside of the back floor, so
   the 3 mm floor doesn't drum or flex: 3 by default, spread evenly from the
   tail to the neck block (about 22%, 41% and 61% of the length), or at the
@@ -230,7 +224,7 @@ the fretboard builder.
   ¼″ corners**, 2.5″ deep by default, at full size (304.8 mm + the 5 mm
   margin is inside the 327.66 mm bed, so it is never scaled). The neck
   goes on a short end and the 12″ axis is the body length. Inside it is
-  146.4 mm wide; the 50.4 mm neck block leaves 48 mm each side. With the
+  146.4 mm wide; the 54.4 mm solid neck block leaves 46 mm each side. With the
   access panel on, its 93 mm ring leaves only 26.7 mm each side, too
   little for a ladder brace (about 33 mm), so the braces over the ring
   (22% and 41%) are left out and a **Fit check** warning lists the options:
@@ -294,8 +288,8 @@ the fretboard builder.
   DXF.
 
 Print in PETG (or ASA), 0.2 mm layers, 7 perimeters (the rim and shelf
-print fully solid), 6 top and bottom layers and normal infill (15–25%); the
-neck block is a ribbed shell, so it needs no infill modifier. With screw wells on, the flat round roof of
+print fully solid), 6 top and bottom layers and normal infill (15–25%), with
+a modifier over the solid neck block for 4+ walls and 30–40% gyroid. With screw wells on, the flat round roof of
 each well is a short bridge — the only one. Glue the top to the shelf and
 the neck block, weighted flat.
 
@@ -303,8 +297,8 @@ the neck block, weighted flat.
 the access panel on and off and both screw modes, the ribs / braces /
 screw-on-top combinations (all of them for every style with
 `BODY_FULL=1`), the brace profile and keep-outs, the screw tabs and sizes: one watertight body on
-the bed (plus its sealed cells), the pocket size / corner radius / floor
-depth, the neck block's walls, ribs, bosses and cells, the shelf drop, width and
+the bed (one shell, no inner cells), the pocket size / corner radius / floor
+depth, the solid neck block, the shelf drop, width and
 45° taper, a slab-by-slab overhang audit (nothing more than one 0.4 mm step
 past the layer below, except the well roofs), the screw maths, the access
 recess and cover fit, bed scaling, the SVG / DXF output, and random shapes.
