@@ -9,13 +9,14 @@
 
   var IN = 25.4;
   var B = window.BodyBuilder;
+  var SBL = window.SoundBoard;
   var $ = function (id) { return document.getElementById(id); };
 
   // Controls whose id is the parameter name.
   var NUM_FIELDS = ['lengthIn', 'lowerWidthIn', 'waistWidthIn', 'upperWidthIn', 'widthIn', 'cornerRadiusIn',
     'depthIn', 'lowerPos', 'waistPos', 'upperPos', 'wallMm', 'floorMm', 'panelThicknessMm', 'shelfAllowanceMm',
     'shelfWidthMm', 'shelfLipMm', 'topFitMm', 'pocketLengthIn', 'pocketWidthIn', 'pocketDepthIn', 'pocketFitMm',
-    'pocketCornerMm', 'pocketWallMm', 'pocketEndWallMm', 'pocketFloorMm', 'ribMm', 'bossWallMm', 'tieHeightMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
+    'pocketCornerMm', 'pocketWallMm', 'pocketEndWallMm', 'pocketFloorMm', 'ribMm', 'bossWallMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
     'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm', 'accessLengthMm', 'accessWidthMm',
     'accessCornerMm', 'accessPos', 'coverThicknessMm', 'coverFitMm', 'accessRingMm', 'accessRingHeightMm',
     'coverScrews', 'coverScrewHoleMm', 'coverScrewClearMm', 'bedMarginMm', 'braceCount', 'braceWidthMm', 'braceHeightMm',
@@ -25,7 +26,24 @@
 
   var styleEl = $('style');
   var shape = 'bouts';      // the current outline family (kept when you go Custom)
-  var result = null, preview = null, viewMode = 'body', timer = null;
+  var result = null, preview = null, viewMode = 'body', timer = null, tab = 'body';
+  var SB_NUM = ['holeSizeMm', 'holeXMm', 'holeYPct', 'holeCount', 'holeSpacingMm', 'holeAngleDeg', 'kerfMm', 'pressFitMm',
+    'pickupCount', 'pickupYPct', 'pickupXMm', 'pickupSpacingMm', 'pickupAngleDeg', 'pickupLengthMm', 'pickupWidthMm', 'pickupCornerMm'];
+  var SB_SEL = ['soundHole', 'fVariant', 'pickup'];
+
+  function readSB() {
+    var o = {};
+    SB_NUM.forEach(function (k) { var v = parseFloat($(k).value); o[k] = isFinite(v) ? v : null; });
+    ['holeSizeMm', 'holeYPct', 'holeCount', 'holeSpacingMm', 'pickupYPct', 'pickupXMm', 'pickupSpacingMm', 'pickupAngleDeg'].forEach(function (k) { if (o[k] === null) o[k] = 0; });
+    ['pickupCount', 'pickupLengthMm', 'pickupWidthMm', 'pickupCornerMm'].forEach(function (k) { if (o[k] === null) o[k] = SBL.DEFAULTS[k]; });
+    o.pickupScrews = $('pickupScrews').checked;
+    if (o.kerfMm === null) o.kerfMm = SBL.DEFAULTS.kerfMm;
+    if (o.pressFitMm === null) o.pressFitMm = SBL.DEFAULTS.pressFitMm;
+    SB_SEL.forEach(function (k) { o[k] = $(k).value; });
+    o.calibration = $('sbCalibration').checked;
+    o.plateMarks = $('plateMarks').checked && !$('plate-row').hidden;
+    return o;
+  }
 
   function readParams() {
     var p = { style: styleEl.value, shape: shape };
@@ -46,6 +64,7 @@
     $('box-rows').hidden = shape !== 'box' && shape !== 'tstyle';
     $('corner-row').hidden = shape !== 'box';
     $('lefty-row').hidden = shape !== 'tstyle';
+    $('plate-row').hidden = shape !== 'box';
   }
 
   // Style presets fill in the shape fields (see BodyBuilder.STYLES);
@@ -81,7 +100,7 @@
     var layers = [{ tris: result.body, color: WOOD }];
     if (result.cover) layers.push({ tris: ex ? shifted(result.cover, 0, 0, -Math.max(40, m.depthMm * 0.6)) : result.cover, color: COVER });
     if (viewMode !== 'body') {
-      if (!result.topTris) result.topTris = B.panelMesh(m.topPanel.outline, m.topPanel.z0, m.topPanel.z1);
+      if (!result.topTris) result.topTris = B.panelMesh(result.sb ? result.sb.finished : m.topPanel.outline, m.topPanel.z0, m.topPanel.z1);
       layers.push({ tris: ex ? shifted(result.topTris, 0, 0, Math.max(40, m.depthMm * 0.6)) : result.topTris, color: PLY });
     }
     return layers;
@@ -121,7 +140,7 @@
       (pk.depthMm / IN).toFixed(2) + '″ below the top surface (never scaled)';
     var nb = m.neckBlock;
     $('block-out').textContent = 'integral ribbed shell, ' + fmtMm(nb.pocketWallMm) + ' side walls and ' + fmtMm(nb.pocketEndWallMm) + ' end wall from the back floor up to the shelf, ' + (nb.filledSides.length ? 'gap to the rim filled on the ' + nb.filledSides.join(' and ') + ' side, ' : '') +
-      (nb.ties ? nb.ties + ' low ties to the rim, ' : '') + fmtMm(nb.pocketFloorMm) + ' plate under the pocket floor' +
+      (nb.neckBrace ? 'one brace across the body at mid-pocket (ladder-brace arc, ' + nb.neckBrace.heightAtShellMm.map(function (h) { return h.toFixed(1); }).join(' / ') + ' mm high at the pocket walls), ' : '') + fmtMm(nb.pocketFloorMm) + ' plate under the pocket floor' +
       (nb.cells ? ' over ' + nb.cells.count + ' sealed cells with ' + fmtMm(nb.ribMm) + ' ribs and ' + nb.bossDiameterMm.toFixed(1) + ' mm screw bosses' : ' (solid below it)') +
       '; ' + (nb.footprintMm[0] / IN).toFixed(2) + '″ × ' + (nb.footprintMm[1] / IN).toFixed(2) + '″; body ' + m.volume.totalCm3.toFixed(0) + ' cm³ (block ' + m.volume.neckBlockCm3.toFixed(0) + ' cm³)';
     var ns = m.neckScrews, stk = ns.stack;
@@ -147,6 +166,11 @@
       ? stp.count + ' × ' + stp.size + ' × ' + stp.lengthIn + '″ ' + stp.head + ' head wood / plastic screws into ' + stp.bossMm.toFixed(1) + ' mm tabs under the shelf; ' +
         stp.pilotMm + ' mm pilot, ' + stp.holeDepthMm.toFixed(0) + ' mm deep; top panel ' + stp.clearanceMm + ' mm clearance holes, ' + stp.headMm + ' mm head ' + (stp.head === 'flat' ? 'countersink' : 'circle') + ' marked'
       : (p.screwTop ? 'left out (see the warning)' : 'off — the top is glued');
+    var ft = m.fit;
+    $('fit-out').textContent = 'inside ' + ft.innerWidthMm.toFixed(1) + ' mm wide; neck block ' + ft.blockWidthMm.toFixed(1) + ' mm' +
+      (ft.blockSideClearMm !== null ? ', ' + ft.blockSideClearMm.toFixed(1) + ' mm clear to the rim each side' : '') +
+      (ft.access ? '; access ring ' + ft.access.ringWidthMm.toFixed(0) + ' mm, ' + ft.access.sideClearMm.toFixed(1) + ' mm clear each side' : '') +
+      (ft.bracesDropped.length ? '; ' + ft.bracesDropped.length + ' brace(s) left out — see the warning' : '; everything fits');
     $('overhang-out').textContent = 'no supports: vertical walls, 45° staircases (steps of ' + m.overhang.stairStepMm.toFixed(2) + ' mm or less)' +
       (ns.wells ? ', plus the flat round roofs of the ' + ns.wellDiameterMm + ' mm wells (short bridges)' : '');
 
@@ -162,10 +186,57 @@
       body: base + '.stl', cover: base + '-cover.stl', topSvg: base + '-top-panel.svg', topDxf: base + '-top-panel.dxf',
       coverSvg: base + '-cover.svg', coverDxf: base + '-cover.dxf'
     };
+    result.names.topPdf = base + '-top-panel.pdf';
+    result.names.topSvg = base + '-soundboard.svg'; result.names.topDxf = base + '-soundboard.dxf'; result.names.topPdf = base + '-soundboard.pdf';
+    soundboard();
     $('filename').textContent = result.names.body + (result.cover ? ' · ' + result.names.cover : '');
     $('status').textContent = 'Built in ' + (Date.now() - t0) + ' ms — ' +
       (m.triangles.body + m.triangles.cover).toLocaleString() + ' triangles, watertight.';
     render(true);
+  }
+
+  // ---- soundboard (2D, cheap: rebuilt on its own when only its fields change)
+  function sbTitle() { var st = B.STYLES[result.meta.style]; return 'Soundboard, ' + (st ? st.label : 'custom') + ' body'; }
+  function soundboard() {
+    if (!result) return;
+    var o = readSB(), sh = o.soundHole;
+    $('fvariant-row').hidden = sh !== 'f-single' && sh !== 'f-double';
+    $('hole-rows').hidden = sh === 'none';
+    $('count-row').hidden = ['ports', 'starburst', 'rosette', 'slash'].indexOf(sh) < 0;
+    $('spacing-row').hidden = ['f-double', 'ports', 'slash'].indexOf(sh) < 0;
+    $('pickup-rows').hidden = o.pickup === 'none';
+    $('pickup-custom').hidden = o.pickup !== 'custom';
+    var sb;
+    try { sb = SBL.build(result.meta, o); } catch (e) { $('sb-warnings').hidden = false; $('sb-warnings').textContent = 'Could not draw the soundboard: ' + e.message; return; }
+    result.sb = sb; result.topTris = null;
+    $('sb-svg').innerHTML = SBL.svg(sb, sbTitle()).replace(/^<\?xml[^>]*>\s*/, '');
+    $('sb-size-out').textContent = sb.sizeMm[1].toFixed(1) + ' × ' + sb.sizeMm[0].toFixed(1) + ' mm finished (' + (sb.sizeMm[1] / IN).toFixed(2) + '″ × ' + (sb.sizeMm[0] / IN).toFixed(2) +
+      '″), ⅛″ ply; files at 1:1 in millimetres (SVG width/height in mm, viewBox in mm)' + (sb.screws ? '; ' + sb.screws.count + ' × ' + sb.screws.size + ' screw holes (' + sb.screws.clearanceMm + ' mm, head ' + sb.screws.headMm + ' mm engraved)' : '') +
+      (sb.plate ? '; plate bolt slots engraved at 7″ × 4¾″ (½″ × 0.28″ slots)' : '');
+    $('sb-kerf-out').textContent = 'kerf ' + sb.kerfMm.toFixed(2) + ' mm, press fit ' + (sb.pressFitMm >= 0 ? '+' : '') + sb.pressFitMm.toFixed(2) + ' mm per side: the outer cut runs ' +
+      (sb.kerfMm / 2 + sb.pressFitMm).toFixed(3) + ' mm outside the rim line (kerf/2 + press fit; the neck notch kerf/2 only); inner cuts ' + (sb.kerfMm / 2).toFixed(3) + ' mm inside (kerf/2). Cut path ' +
+      sb.cutSizeMm[1].toFixed(2) + ' × ' + sb.cutSizeMm[0].toFixed(2) + ' mm.';
+    var h = sb.hole;
+    $('sb-hole-out').textContent = h.style === 'none' ? 'none' : (h.style + (h.variant ? ' (' + h.variant + ')' : '') + ', ' + h.sizeMm.toFixed(0) + ' mm, centre ' + h.x.toFixed(0) + ' mm across, ' +
+      h.yPct.toFixed(0) + '% along' + (h.count ? ', ' + h.count + ' parts' : '') + (h.spacingMm ? ', spacing ' + h.spacingMm.toFixed(0) + ' mm' : '') + (h.angleDeg ? ', ' + h.angleDeg.toFixed(0) + '°' : '') + '; open area ' + (sb.holeAreaMm2 / 100).toFixed(1) + ' cm²');
+    $('sb-check-out').textContent = sb.checks.length ? sb.checks.map(function (c) { return c.what + ' ' + c.mm.toFixed(1) + ' mm (min ' + c.need.toFixed(0) + ')'; }).join('; ') +
+      '. Thin-wood threshold ' + sb.minBridgeMm + ' mm; holes stay ' + sb.glueMarginMm + ' mm off the glue shelf and the neck block.' : '—';
+    var pk = sb.pickups;
+    $('sb-pickup-out').textContent = !pk ? 'none' : (pk.count + ' × ' + pk.label.toLowerCase() + ', cutout ' + pk.lengthMm.toFixed(1) + ' × ' + pk.widthMm.toFixed(1) + ' mm, ' + pk.cornerMm.toFixed(1) +
+      ' mm corners, centred ' + pk.yPct.toFixed(0) + '% along' + (pk.count > 1 ? ', ' + pk.spacingMm.toFixed(0) + ' mm apart' : '') + (pk.screws ? '; ' + pk.screws.count + ' screw holes ' + pk.screws.holeMm + ' mm, ' + pk.screws.spanMm.toFixed(1) + ' mm apart' : '') +
+      '; cavity ' + pk.depthFromSurfaceMm.toFixed(1) + ' mm from the top surface to the back floor (' + pk.depthUnderTopMm.toFixed(1) + ' mm under the top)' +
+      (pk.overBraces.length ? ', ' + pk.overBraces.map(function (b) { return b.fromSurfaceMm.toFixed(1) + ' mm over the brace at ' + b.yPct.toFixed(0) + '%'; }).join(', ') : '') + '; needs about ' + pk.needsDepthMm + ' mm');
+    $('sb-warnings').hidden = !sb.warnings.length;
+    $('sb-warnings').textContent = sb.warnings.join(' ');
+    if (viewMode !== 'body') render(true);
+  }
+  function setTab(t) {
+    tab = t;
+    $('tab-body').classList.toggle('active', t === 'body');
+    $('tab-sb').classList.toggle('active', t === 'sb');
+    $('body-view').hidden = t !== 'body';
+    $('sb-view').hidden = t !== 'sb';
+    if (t === 'body') render(true);
   }
 
   function schedule() {
@@ -195,18 +266,6 @@
     return a.cover.outline.concat(holes);
   }
 
-  // top panel: outline + screw clearance holes (cut); head circles (engrave)
-  function circ(x, y, r) { var pts = []; for (var i = 0; i < 36; i++) pts.push([x + r * Math.cos(Math.PI * i / 18), y + r * Math.sin(Math.PI * i / 18)]); return pts; }
-  function topCut() {
-    var st = result.meta.screwTop, out = result.meta.topPanel.outline.slice();
-    if (st) st.screws.forEach(function (s) { out.push(circ(s.x, s.y, st.clearanceMm / 2)); });
-    return out;
-  }
-  function topMarks() {
-    var st = result.meta.screwTop;
-    return st ? st.screws.map(function (s) { return circ(s.x, s.y, st.headMm / 2); }) : [];
-  }
-
   // ---- events
   styleEl.addEventListener('change', function () { applyStyle(styleEl.value); });
   B.STYLE_FIELDS.forEach(function (k) {
@@ -223,8 +282,16 @@
   $('dl-body').addEventListener('click', function () { if (result) download(STLExport.trianglesToSTL(result.body), result.names.body); });
   // the cover prints outer face down; it is modelled that way
   $('dl-cover').addEventListener('click', function () { if (result && result.cover) download(STLExport.trianglesToSTL(result.cover), result.names.cover); });
-  $('dl-top-svg').addEventListener('click', function () { if (result) download(B.panelSVG(topCut(), 'Top panel', topMarks()), result.names.topSvg, 'image/svg+xml'); });
-  $('dl-top-dxf').addEventListener('click', function () { if (result) download(B.panelDXF(topCut(), topMarks()), result.names.topDxf, 'application/dxf'); });
+  $('dl-top-svg').addEventListener('click', function () { if (result && result.sb) download(SBL.svg(result.sb, sbTitle()), result.names.topSvg, 'image/svg+xml'); });
+  $('dl-top-dxf').addEventListener('click', function () { if (result && result.sb) download(SBL.dxf(result.sb, sbTitle()), result.names.topDxf, 'application/dxf'); });
+  $('dl-top-pdf').addEventListener('click', function () { if (result && result.sb) download(SBL.pdf(result.sb, sbTitle()), result.names.topPdf, 'application/pdf'); });
+  SB_NUM.forEach(function (k) { $(k).addEventListener('input', soundboard); });
+  SB_SEL.forEach(function (k) { $(k).addEventListener('change', soundboard); });
+  $('sbCalibration').addEventListener('change', soundboard);
+  $('plateMarks').addEventListener('change', soundboard);
+  $('pickupScrews').addEventListener('change', soundboard);
+  $('tab-body').addEventListener('click', function () { setTab('body'); });
+  $('tab-sb').addEventListener('click', function () { setTab('sb'); });
   $('dl-cover-svg').addEventListener('click', function () { if (result && result.cover) download(B.panelSVG(coverCut(), 'Cover plate (outer face)'), result.names.coverSvg, 'image/svg+xml'); });
   $('dl-cover-dxf').addEventListener('click', function () { if (result && result.cover) download(B.panelDXF(coverCut()), result.names.coverDxf, 'application/dxf'); });
 

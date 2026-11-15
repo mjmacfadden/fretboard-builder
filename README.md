@@ -126,6 +126,7 @@ Everything (including the 3D preview) runs locally in plain JavaScript.
 | `test.js` | Headless geometry tests: `node test.js` (also runs `body-test.js`) |
 | `body-builder.html` / `body-app.js` | The body builder page and its controls |
 | `body-geometry.js` | One-piece body: outline, rim + floor, glue shelf, neck block and pocket, access panel, top/cover outlines (pure JS — runs in Node too) |
+| `soundboard.js` | The laser-cut soundboard: sound holes, pickup cutouts, clearance checks, kerf / press-fit offsets, SVG / DXF / PDF export (pure JS) |
 | `body-test.js` | Body builder tests: `node body-test.js` |
 | `preview.js` | The canvas 3D preview, packaged for the body page |
 | `vendor/clipper.js` | Clipper polygon booleans / offsets (Boost license, © Angus Johnson) |
@@ -153,9 +154,15 @@ the fretboard builder.
     thicker, as nothing braces it from behind) from the back floor up to
     the shelf, so the top is glued to them too. Nothing runs tailward
     past the end wall;
-  - optional **neck block ribs** (off by default): low ties (3 mm thick,
-    20 mm high) from each side wall out to the rim, one where the corner
-    round meets the side and one mid-pocket. With them off the pocket walls
+  - optional **neck block ribs** (off by default): **one brace straight
+    across the body** at mid-pocket, shaped like a ladder brace that the
+    neck pocket interrupts. Its arc is worked out over the full inside
+    width (7 mm wide, 12 mm tall on the centreline, falling along the same
+    parabola to 4.5 mm at each rim, rounded crown); the pocket shell is
+    solid through the middle, so each half meets the shell wall at the
+    height the full arc has there (about 11.2 mm on the parlor). It stays
+    under the shelf and clear of the screw-on top tabs, and stops short of
+    the access ring if that is in the way. With it off the pocket walls
     stand alone. Either way, where the rim comes within 4 mm of the wall
     (the T-Style treble side, about 10 mm) that gap is filled solid;
   - under the pocket, a **6 mm solid plate** below the pocket floor. Beneath
@@ -219,7 +226,17 @@ the fretboard builder.
   The printed cover plate has the matching bevel, sits flush with the back
   and prints outer face down; four small screws (#2 / M2.5) go through it
   into the ring. Turn it off and the back is solid.
-- **Styles**: parlor, small dreadnought style, round, cigar-box style, the
+- **License plate** style: the standard US plate outline, **12″ × 6″ with
+  ¼″ corners**, 2.5″ deep by default, at full size (304.8 mm + the 5 mm
+  margin is inside the 327.66 mm bed, so it is never scaled). The neck
+  goes on a short end and the 12″ axis is the body length. Inside it is
+  146.4 mm wide; the 50.4 mm neck block leaves 48 mm each side. With the
+  access panel on, its 93 mm ring leaves only 26.7 mm each side, too
+  little for a ladder brace (about 33 mm), so the braces over the ring
+  (22% and 41%) are left out and a **Fit check** warning lists the options:
+  an opening no wider than 62 mm, brace positions outside 10–56% of the
+  length, moving the opening, or no access panel.
+- **Styles**: parlor, small dreadnought style, round, cigar-box style, license plate, the
   **T-Style** single cutaway (traced from `t-style-body-outline.svg`; its
   neck end is closed with a straight wall beside the pocket) and Custom.
   Depth and all sizes stay adjustable; left-handed mirrors the cutaway.
@@ -229,10 +246,52 @@ the fretboard builder.
   shelf and screw holes stay true size. The T-Style (12.9″ × 10.52″ drawn)
   lands at **12.70″ × 10.36″** (98.5%); the small dreadnought style
   (12.75″) at 12.70″; the parlor (12.5″ × 9.5″) fits unscaled.
+- **Soundboard tab**: the preview has **Body** and **Soundboard** tabs. The
+  soundboard is the laser-cut ⅛″ ply top that presses into the opening
+  above the shelf, drawn in 2D for the chosen body, with the neck pocket
+  notch, the top screw holes (screw-on top), the sound hole and pickups.
+  - **Sound holes**: none, round, single f-hole (classic, violin or
+    ornamental), two f-holes, slash (cat's-eye), starburst cluster, small
+    ports, filigree rosette, crescent, wave slot. Size, position, count,
+    spacing and angle are adjustable (blank = automatic for the body).
+  - **Pickup cutouts**: 1–3 side by side, with position, spacing and
+    slant. Presets (cutout length across the strings × width, corner
+    radius; the depth a typical pickup of the kind needs below the top):
+
+    | Preset | Cutout | Corners | Needs depth |
+    |---|---|---|---|
+    | Single-coil style | 85 × 19 mm | 6 mm | about 18 mm |
+    | Humbucker style | 71 × 39 mm | 3 mm | about 20 mm |
+    | Mini-humbucker / lipstick style | 68 × 28 mm | 5 mm | about 16 mm |
+    | Custom rectangle | your size | your radius | — |
+
+    Optional mounting-screw holes (3 mm clearance), one past each end of
+    each cutout with a full 6 mm of wood in between (real pickups' ear
+    spacing varies: measure yours). Blank position = the spot nearest a
+    third of the length that keeps clear of the sound hole, the glue
+    shelf, the neck block, the top screws and (if it can) the ladder
+    braces. The readout gives the cavity depth (top surface to back floor;
+    e.g. 79.3 mm parlor, 60.3 mm license plate, 43.7 mm T-Style) and warns
+    when a pickup sits over a ladder brace (12 mm less there).
+  - **Checks**: holes and pickups stay the glue shelf + 3 mm (10 mm) in
+    from the rim, 3 mm off the neck block and the screw heads, and at
+    least **6 mm** (about twice the ply) apart; anything thinner is flagged
+    as thin wood. Every default design on every body passes.
+  - **Laser kerf** (default **0.18 mm**, CO₂ on ⅛″ ply) and **press fit**
+    (default **+0.05 mm** per side): the outer cut runs kerf/2 + press fit
+    outside the rim line (the neck notch kerf/2 only), inner cuts kerf/2
+    inside, so the finished part is true to size. Cut a test strip first.
+  - **Exports**, all 1:1 in millimetres: SVG (width/height in mm and a
+    matching mm viewBox, Inkscape layers), DXF (R12, $INSUNITS = mm) and
+    PDF. Layers / colours: outer cut red, inner cuts blue, engrave black,
+    and a **100 mm calibration square** with the size label on its own
+    magenta layer (turn it off before cutting). The License plate can add
+    the four **plate bolt slots** as engrave marks (off by default): the
+    standard 7″ × 4¾″ pattern, ½″ × 0.28″ slots.
 - **Downloads**: the body STL (already in print orientation), the cover
-  plate STL (when the access panel is on), the top panel outline (with the
-  pocket notch) and the cover outline (with its screw holes) as 1:1 SVG
-  (mm, with a 100 mm check bar) or DXF.
+  plate STL (when the access panel is on), the soundboard (SVG / DXF /
+  PDF, above) and the cover outline (with its screw holes) as 1:1 SVG or
+  DXF.
 
 Print in PETG (or ASA), 0.2 mm layers, 7 perimeters (the rim and shelf
 print fully solid), 6 top and bottom layers and normal infill (15–25%); the

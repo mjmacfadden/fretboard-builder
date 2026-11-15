@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const ClipperLib = require('./vendor/clipper.js');
 const B = require('./body-geometry.js');
+const SB = require('./soundboard.js');
 const STL = require('./stl.js');
 
 const IN = 25.4;
@@ -148,7 +149,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
 
 // === Body A: style presets, generic names, Custom detection ==============
 {
-  assert.deepStrictEqual(B.STYLE_KEYS, ['parlor', 'small-dread', 'round', 'cigar-box', 't-style']);
+  assert.deepStrictEqual(B.STYLE_KEYS, ['parlor', 'small-dread', 'round', 'cigar-box', 'license-plate', 't-style']);
   B.STYLE_KEYS.forEach(k => {
     const p = B.styleParams(k);
     assert.strictEqual(p.style, k);
@@ -169,7 +170,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   assert.strictEqual(B.DEFAULTS.bedMarginMm, 5, 'A: 5 mm bed margin');
   assert.strictEqual(B.DEFAULTS.wallMm, 3, 'A: 3 mm walls');
   assert.strictEqual(B.WALL_MIN_MM, 2, 'A: 2 mm minimum wall');
-  assert.strictEqual(B.DEFAULTS.neckBlockRibs, false, 'A: neck block ribs (side ties) off by default');
+  assert.strictEqual(B.DEFAULTS.neckBlockRibs, false, 'A: neck block ribs (the neck block brace) off by default');
   assert.strictEqual(B.DEFAULTS.ladderBraces, true, 'A: ladder braces on by default');
   assert.strictEqual(B.DEFAULTS.screwTop, false, 'A: glued top by default (screw-on top off)');
   assert.strictEqual(B.DEFAULTS.topScrewSize, '#4', 'A: #4 top screws by default');
@@ -178,12 +179,13 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   // no brand or model names anywhere in the body builder's files
   const banned = ['Fen' + 'der', 'Gib' + 'son', 'Tele' + 'caster', 'Mar' + 'tin', 'Les ' + 'Paul', 'Str' + 'at'];
   const re = new RegExp('\\b(' + banned.join('|') + ')', 'i');
-  ['body-builder.html', 'body-app.js', 'body-geometry.js', 'body-test.js', 'preview.js', 'README.md'].forEach(f => {
+  banned.push('Ricken' + 'backer', 'Stradi' + 'varius');
+  ['body-builder.html', 'body-app.js', 'body-geometry.js', 'body-test.js', 'preview.js', 'soundboard.js', 'README.md'].forEach(f => {
     const txt = fs.readFileSync(path.join(__dirname, f), 'utf8');
     const m = txt.match(re);
     assert.ok(!m, `A: ${f} mentions "${m && m[0]}"`);
   });
-  console.log('Body A ok: 5 generic style presets, edits switch to Custom, clamshell parameters gone, 2.75 x 1.5 x 0.9in pocket default, no brand names');
+  console.log('Body A ok: 6 generic style presets, edits switch to Custom, clamshell parameters gone, 2.75 x 1.5 x 0.9in pocket default, no brand names');
 }
 
 // === Body B: one watertight part per style, access on/off, both screw modes
@@ -455,13 +457,33 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
       assert.ok(!solid(r, x, y0 - ew - 0.3, z) && !solid(r, x, y0 - ew - 10, z), `L: ${k} hollow behind the end wall at x=${x.toFixed(1)}, z=${z.toFixed(1)}`)));
     if (!nb.filledSides.includes('right')) {
       assert.ok(!solid(r, hw + tw + 0.3, yc + 5, zm), `L: ${k} hollow outside the side wall`);
-      assert.ok(!nb.ribs && nb.ties === 0 && !solid(r, hw + tw + 1, yc, m.floorMm + 1), `L: ${k} no side ties with neck block ribs off (the default)`);
-      const rr = build(`${k}-ribs`, P(k, { neckBlockRibs: true }));
-      assert.ok(rr.meta.neckBlock.ribs && rr.meta.neckBlock.ties > 0, `L: ${k} ribs on -> side ties`);
-      assert.ok(B.solidAt(rr, 'body', hw + tw + 1, yc, m.floorMm + 1), `L: ${k} ribs on: low tie from the side wall towards the rim`);
-      assert.ok(!B.solidAt(rr, 'body', hw + tw + 0.3, yc + 5, zm), `L: ${k} ribs on: hollow above the ties`);
-      assert.strictEqual(rr.meta.neckBlock.footprintPieces, 1, `L: ${k} ribs on: walls and ties one piece`);
+      assert.ok(!nb.ribs && !nb.neckBrace && !solid(r, hw + tw + 1, yc, m.floorMm + 1), `L: ${k} no neck block brace with neck block ribs off (the default)`);
     }
+    // ribs on: ONE brace straight across the body at mid-pocket, the
+    // ladder-brace profile over the full inside width (tallest on the
+    // centreline), the pocket shell solid through the middle
+    const rr = build(`${k}-ribs`, P(k, { neckBlockRibs: true })), nr = rr.meta.neckBlock, nbr = nr.neckBrace, bm = rr.meta.braces;
+    assert.ok(nr.ribs && nbr, `L: ${k} ribs on -> neck block brace`);
+    approx(nbr.y, yc, 1e-6, `L: ${k} neck brace at mid-pocket`);
+    approx(nbr.heightCentreMm, bm.heightMm, 1e-9, `L: ${k} neck brace has the ladder braces' centre height`);
+    approx(nbr.endHeightMm, bm.endHeightMm, 1e-9, `L: ${k} ... and end height`);
+    assert.strictEqual(nr.footprintPieces, 1, `L: ${k} ribs on: shell and brace one piece`);
+    const X0 = nbr.segments[0].x0, xsw = hw + tw, hcalc = (x) => { const a = x < 0 ? nbr.spanMm - (nbr.segments.slice(-1)[0].x1) : 0; return a; };
+    void hcalc;
+    [-1, 1].forEach(sg => {
+      if (sg > 0 && nr.filledSides.includes('right')) return;
+      if (sg < 0 && nr.filledSides.includes('left')) return;
+      const h = nbr.heightAtShellMm[sg < 0 ? 0 : 1];
+      // meets the shell wall at the full arc's height there
+      assert.ok(B.solidAt(rr, 'body', sg * (xsw + 0.5), yc, m.floorMm + h - 0.6), `L: ${k} brace meets the ${sg < 0 ? 'bass' : 'treble'} wall at ${h.toFixed(1)} mm`);
+      assert.ok(!B.solidAt(rr, 'body', sg * (xsw + 0.5), yc, m.floorMm + h + 0.6), `L: ${k} ... and no higher`);
+      assert.ok(h > nbr.endHeightMm + 3 && h <= nbr.heightCentreMm, `L: ${k} wall height between the end and centre heights (one arc, not two)`);
+      // hollow above it, up to the shelf
+      assert.ok(!B.solidAt(rr, 'body', sg * (xsw + 1), yc, zm), `L: ${k} hollow above the neck brace`);
+    });
+    assert.ok(X0 < -hw - tw - 20, `L: ${k} neck brace reaches out towards the bass rim`);
+    // continuous arc: inside the shell the profile would be taller than at the walls
+    assert.ok(nbr.heightCentreMm > Math.max.apply(null, nbr.heightAtShellMm) - 1e-9, `L: ${k} the pocket interrupts the tallest part of the arc`);
     // under the pocket: solid floor plate, then cells between ribs and screw bosses
     const c = nb.cells;
     assert.ok(c && c.count === 4, `L: ${k} four sealed cells under the pocket`);
@@ -482,12 +504,15 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   assert.deepStrictEqual(build('parlor-false-plate').meta.neckBlock.filledSides, [], 'L: parlor: no gap fill (ties both sides when ribs are on)');
   const tr = build('t-style-ribs', P('t-style', { neckBlockRibs: true })).meta.neckBlock;
   assert.deepStrictEqual(tr.filledSides, ['right'], 'L: T-Style treble fill stays with ribs on');
+  const pr = build('parlor-ribs').meta.neckBlock.neckBrace;
+  approx(pr.heightAtShellMm[0], pr.heightAtShellMm[1], 0.05, 'L: parlor neck brace symmetric');
+  assert.strictEqual(pr.segments.length, 1, 'L: parlor neck brace one run rim to rim');
   const par = build('parlor-false-plate').meta.volume;
   assert.ok(par.totalCm3 < 650, `L: parlor body ${par.totalCm3.toFixed(0)} cm3 (847 with the solid block)`);
   const thin = B.build(P('parlor', { pocketWallMm: 1, ribMm: 1 }));
   assert.ok(thin.meta.neckBlock.pocketWallMm === 2 && thin.meta.neckBlock.ribMm === 2 && thin.warnings.some(w => /thinner than 2 mm/.test(w)), 'L: block walls clamped to 2 mm');
   assert.strictEqual(edgeErrors(thin.body), 0, 'L: thinnest shell watertight');
-  console.log(`Body L ok: ${build('parlor-false-plate').meta.neckBlock.pocketWallMm} mm shell walls, ${build('parlor-false-plate').meta.neckBlock.pocketEndWallMm} mm end wall, no gussets, side ties only with ribs on, gap fill kept, ${build('parlor-false-plate').meta.neckBlock.bossDiameterMm.toFixed(1)} mm bosses, 4 sealed cells; parlor ${par.totalCm3.toFixed(0)} cm3 total`);
+  console.log(`Body L ok: ${build('parlor-false-plate').meta.neckBlock.pocketWallMm} mm shell walls, ${build('parlor-false-plate').meta.neckBlock.pocketEndWallMm} mm end wall, no gussets, one neck block brace (ribs on: ${build('parlor-ribs').meta.neckBlock.neckBrace.heightAtShellMm[0].toFixed(1)} mm at the pocket walls), gap fill kept, ${build('parlor-false-plate').meta.neckBlock.bossDiameterMm.toFixed(1)} mm bosses, 4 sealed cells; parlor ${par.totalCm3.toFixed(0)} cm3 total`);
 }
 
 // === Body M: neck block ribs, ladder braces, screw-on top ===================
@@ -505,6 +530,9 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     assert.strictEqual(bad.length, 0, `${tag}: support-free ${JSON.stringify(bad.map(b => [b.z, b.area]))}`);
     assert.strictEqual(!!r.meta.braces, br, `${tag}: braces ${br ? 'present' : 'absent'}`);
     assert.strictEqual(!!r.meta.screwTop, st, `${tag}: screw tabs ${st ? 'present' : 'absent'}`);
+    assert.strictEqual(!!r.meta.neckBlock.neckBrace, ribs, `${tag}: neck brace ${ribs ? 'present' : 'absent'}`);
+    if (ribs && st) r.meta.screwTop.screws.forEach(h => assert.ok(Math.abs(h.y - r.meta.neckBlock.neckBrace.y) > r.meta.screwTop.bossMm / 2 + 2 || r.meta.screwTop.tabBottomZ > r.meta.floorMm + r.meta.neckBlock.neckBrace.heightCentreMm + 2, `${tag}: tab clear of the neck brace`));
+    if (ribs) assert.ok(r.meta.floorMm + r.meta.neckBlock.neckBrace.heightCentreMm < r.meta.shelf.taperBottomZ - 5, `${tag}: neck brace well under the shelf`);
     n++;
   })))));
   // braces: tall, thin, parabolic, rounded top; clear of the block, access ring and shelf
@@ -550,18 +578,135 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   console.log(`Body M ok: ${n} ribs/braces/screw-top/access builds watertight and support-free; braces ${bm.widthMm} x ${bm.heightMm} mm parabolic; ${sm.count} x #4 tabs, ${sm.bossMm} mm bosses`);
 }
 
+// === Body N: the License Plate style =======================================
+{
+  const r = build('license-plate-false-plate'), m = r.meta;
+  approx(m.lengthMm, 12 * IN, 0.05, 'N: 12in long'); approx(m.widthMm, 6 * IN, 0.05, 'N: 6in wide');
+  assert.ok(!m.scaled && m.outlineScale === 1 && m.fitsBed, 'N: full size, not scaled');
+  assert.ok(12 * IN + m.bedMarginMm <= m.bedMm + 1e-9 && m.bedLimitMm === m.bedMm - m.bedMarginMm, `N: 304.8 + ${m.bedMarginMm} mm margin within the ${m.bedMm.toFixed(2)} mm bed`);
+  approx(m.depthMm, 2.5 * IN, 1e-6, 'N: 2.5in deep by default');
+  approx(m.pocket.lengthMm, 2.75 * IN, 1e-6, 'N: pocket 2.75in, true size'); approx(m.pocket.widthMm, 1.5 * IN + 2 * B.DEFAULTS.pocketFitMm, 1e-6, 'N: pocket 1.5in (+ fit)');
+  approx(m.pocket.y1, m.L, 1e-6, 'N: neck on the short (top) end');
+  assert.ok(m.fit && m.fit.blockSideClearMm > 40, `N: ${m.fit.blockSideClearMm.toFixed(1)} mm each side of the neck block`);
+  // corners: 1/4in radius (the corner point is outside, 2 mm in along the diagonal is inside)
+  const hx = m.widthMm / 2, ri = 0.25 * IN, d = ri * (1 - Math.SQRT1_2);
+  assert.ok(!solid(r, hx - d + 0.4, 0 + d - 0.4, 1) && solid(r, hx - d - 0.4, d + 0.4, 1), 'N: quarter-inch rounded corners');
+  const ra = build('license-plate-true-plate'), fa = ra.meta.fit;
+  assert.ok(fa.access && fa.bracesDropped.length >= 1 && ra.warnings.some(w => /^Fit check:/.test(w) && /no wider than/.test(w)), 'N: access panel on: fit check warns and suggests options');
+  const rl = B.build(P('license-plate', { accessPanel: true, bracePositions: '60, 68' }));
+  assert.ok(rl.meta.braces && rl.meta.braces.count === 2 && !rl.warnings.some(w => /^Fit check:/.test(w)), 'N: braces moved off the ring: no fit warning');
+  console.log(`Body N ok: License Plate ${m.lengthMm.toFixed(1)} x ${m.widthMm.toFixed(1)} mm unscaled (bed limit ${m.bedLimitMm.toFixed(2)}), ${m.depthMm} mm deep, ${m.volume.totalCm3.toFixed(0)} cm3; access-panel fit check suggests options`);
+}
+
+// === Body O: soundboard export (sizes, layers, kerf), hole styles, pickups ===
+{
+  const KEYS = B.STYLE_KEYS;
+  function svgInfo(txt) {
+    const w = +txt.match(/<svg[^>]*\swidth="([\d.]+)mm"/)[1], h = +txt.match(/<svg[^>]*\sheight="([\d.]+)mm"/)[1];
+    const vb = txt.match(/viewBox="([^"]+)"/)[1].split(/\s+/).map(Number);
+    const groups = {};
+    txt.replace(/<g id="(\w+)"[^>]*>([\s\S]*?)<\/g>/g, (all, id, body) => {
+      // a small path parser (M L H V h v l m Z), every subpath separately
+      const paths = [];
+      body.replace(/<path[^>]*\sd="([^"]+)"/g, (a, dd) => {
+        const tok = dd.match(/[MLHVZmlhvz]|-?[\d.]+(?:e-?\d+)?/g); let cmd = 'M', cx = 0, cy = 0, cur = null, i = 0;
+        while (i < tok.length) {
+          if (/[A-Za-z]/.test(tok[i])) { cmd = tok[i++]; if (/[Zz]/.test(cmd)) { cur = null; continue; } }
+          const num = () => +tok[i++];
+          if (cmd === 'M' || cmd === 'm') { const x = num(), y = num(); cx = cmd === 'm' ? cx + x : x; cy = cmd === 'm' ? cy + y : y; cur = [[cx, cy]]; paths.push(cur); cmd = cmd === 'm' ? 'l' : 'L'; continue; }
+          if (cmd === 'L') { cx = num(); cy = num(); } else if (cmd === 'l') { cx += num(); cy += num(); }
+          else if (cmd === 'H') cx = num(); else if (cmd === 'h') cx += num(); else if (cmd === 'V') cy = num(); else if (cmd === 'v') cy += num();
+          if (!cur) { cur = [[cx, cy]]; paths.push(cur); } else cur.push([cx, cy]);
+        }
+      });
+      groups[id] = paths; return all;
+    });
+    return { w, h, vb, groups };
+  }
+  const bb = (paths) => { let b = [Infinity, Infinity, -Infinity, -Infinity]; paths.forEach(pp => pp.forEach(q => { b[0] = Math.min(b[0], q[0]); b[1] = Math.min(b[1], q[1]); b[2] = Math.max(b[2], q[0]); b[3] = Math.max(b[3], q[1]); })); return b; };
+  let n = 0;
+  KEYS.forEach(k => {
+    const r = build(`${k}-false-plate`), m = r.meta, sb = SB.build(m, {});
+    assert.strictEqual(sb.problems.length, 0, `O: ${k} default round hole clears everything: ${JSON.stringify(sb.warnings)}`);
+    const sv = SB.svg(sb, k), info = svgInfo(sv);
+    // 1 user unit = 1 mm
+    assert.ok(info.vb[0] === 0 && info.vb[1] === 0 && Math.abs(info.vb[2] - info.w) < 1e-6 && Math.abs(info.vb[3] - info.h) < 1e-6, `O: ${k} SVG width/height in mm match the viewBox`);
+    assert.ok(!/px|pt"/.test(sv.match(/<svg[^>]*>/)[0]), `O: ${k} no px/pt units`);
+    // the outer cut, measured from the file = the finished top + the kerf
+    const ob = bb(info.groups.outer);
+    approx(ob[2] - ob[0], sb.sizeMm[0] + sb.kerfMm, 0.02, `O: ${k} SVG outer cut width = finished + kerf`);
+    approx(ob[3] - ob[1], sb.sizeMm[1] + sb.kerfMm, 0.02, `O: ${k} SVG outer cut length = finished + kerf`);
+    // the finished top = the rim's inside face + the press fit each side
+    const ib = (function () { let b = [Infinity, Infinity, -Infinity, -Infinity]; m.topPanel.opening.forEach(pp => pp.forEach(q => { b[0] = Math.min(b[0], q[0]); b[2] = Math.max(b[2], q[0]); })); return b; })();
+    approx(sb.sizeMm[0], ib[2] - ib[0] + 2 * sb.pressFitMm, 0.02, `O: ${k} finished width = opening + 2 x press fit`);
+    // calibration: a 100 mm square on its own layer
+    const cal = info.groups.calibration.map(p => bb([p])).filter(b => Math.abs(b[2] - b[0] - 100) < 0.01 && Math.abs(b[3] - b[1] - 100) < 0.01);
+    assert.strictEqual(cal.length, 1, `O: ${k} 100 mm calibration square`);
+    const off = svgInfo(SB.svg(SB.build(m, { calibration: false }), k));
+    assert.ok(!off.groups.calibration || !off.groups.calibration.length, `O: ${k} calibration can be turned off`);
+    assert.ok(/stroke="#ff0000"|stroke="red"/i.test(sv.split('id="outer"')[1].split('</g>')[0]) || /ff0000/i.test(sv), `O: ${k} outer cut red`);
+    // inner cut: the round hole is kerf/2 smaller
+    const inn = info.groups.inner.map(p => bb([p])).filter(b => b[2] - b[0] > 10);
+    assert.ok(inn.some(b => Math.abs(b[2] - b[0] - (sb.hole.sizeMm - sb.kerfMm)) < 0.05), `O: ${k} round hole cut = size - kerf`);
+    // DXF in mm, PDF at 1:1
+    const dx = SB.dxf(sb, k);
+    assert.ok(/\$INSUNITS\s*\n\s*70\s*\n\s*4\b/.test(dx) && /OUTER_CUT/.test(dx) && /INNER_CUTS/.test(dx) && /CALIBRATION/.test(dx), `O: ${k} DXF in mm with layers`);
+    const pdf = SB.pdf(sb, k), mb = pdf.match(/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/);
+    approx(+mb[1] / 72 * IN, info.w, 0.01, `O: ${k} PDF page 1:1`);
+    n++;
+  });
+  // every hole style on every body builds; thin bridges flagged
+  const styles = SB.HOLE_STYLES.map(h => h[0]);
+  KEYS.forEach(k => styles.forEach(h => {
+    const sb = SB.build(build(`${k}-false-plate`).meta, { soundHole: h });
+    assert.ok(sb.layers.outer.length >= 1, `O: ${k} ${h} builds`);
+    assert.strictEqual(sb.problems.length, 0, `O: ${k} ${h} default placement is clean: ${JSON.stringify(sb.warnings)}`);
+  }));
+  const thin = SB.build(build('parlor-false-plate').meta, { soundHole: 'ports', holeCount: 8, holeSpacingMm: 12, holeSizeMm: 10 });
+  assert.ok(thin.problems.some(p => p.mm < SB.MIN_BRIDGE_MM) && thin.warnings.some(w => /Thin wood/.test(w)), 'O: a 2 mm bridge between ports is flagged');
+  // screw-on top: clearance holes cut, heads engraved
+  const st = B.build(P('parlor', { screwTop: true })), sst = SB.build(st.meta, {});
+  assert.strictEqual(sst.screws.count, st.meta.screwTop.count, 'O: one top hole per tab');
+  // plate marks: 7in x 4-3/4in, 1/2 x 0.28in slots, engrave layer, off by default
+  const lp = build('license-plate-false-plate').meta;
+  assert.ok(!SB.build(lp, {}).plate, 'O: plate marks off by default');
+  const pm = SB.build(lp, { plateMarks: true });
+  approx(pm.plate.spec.spanAlongMm, 7 * IN, 1e-9, 'O: plate slots 7in apart along'); approx(pm.plate.spec.spanAcrossMm, 4.75 * IN, 1e-9, 'O: 4-3/4in across');
+  approx(pm.plate.spec.slotLongMm, 0.5 * IN, 1e-9, 'O: 1/2in slots'); approx(pm.plate.spec.slotShortMm, 0.28 * IN, 1e-9, 'O: 0.28in slots');
+  // pickups: presets, kerf, clearances, brace warning, depth
+  const par = build('parlor-false-plate').meta;
+  const p1 = SB.build(par, { soundHole: 'none', pickup: 'humbucker' });
+  assert.ok(p1.pickups && p1.pickups.lengthMm === 71 && p1.pickups.widthMm === 39 && p1.problems.length === 0, 'O: humbucker preset placed clear');
+  const pinn = svgInfo(SB.svg(p1, 'p')).groups.inner.map(p => bb([p]));
+  assert.ok(pinn.some(b => Math.abs(b[2] - b[0] - (71 - p1.kerfMm)) < 0.05 && Math.abs(b[3] - b[1] - (39 - p1.kerfMm)) < 0.05), 'O: pickup cut = cutout - kerf');
+  approx(p1.pickups.depthFromSurfaceMm, par.topPanel.topSurfaceZ - par.floorMm, 1e-6, 'O: cavity depth reported');
+  const p3 = SB.build(par, { soundHole: 'none', pickup: 'single', pickupCount: 3, pickupScrews: true });
+  assert.ok(p3.pickups.count === 3 && p3.pickups.screws.count === 6 && p3.problems.every(p => p.kind === 'pickup-brace'), 'O: 3 single-coil style with screws');
+  const ov = SB.build(par, { soundHole: 'none', pickup: 'humbucker', pickupYPct: par.braces.positionsPct[1] });
+  assert.ok(ov.pickups.overBraces.length === 1 && ov.warnings.some(w => /over a ladder brace/.test(w)), 'O: pickup over a ladder brace warned');
+  const nearHole = SB.build(par, { soundHole: 'round', pickup: 'humbucker', pickupYPct: SB.build(par, {}).hole.yPct });
+  assert.ok(nearHole.problems.some(p => p.kind === 'pickup-hole'), 'O: pickup on the sound hole flagged');
+  const shelf = SB.build(par, { soundHole: 'none', pickup: 'custom', pickupLengthMm: 160, pickupWidthMm: 30, pickupYPct: 40 });
+  assert.ok(shelf.problems.some(p => p.kind === 'pickup-shelf'), 'O: pickup onto the glue shelf flagged');
+  const blk = SB.build(par, { soundHole: 'none', pickup: 'humbucker', pickupYPct: 85 });
+  assert.ok(blk.problems.some(p => p.kind === 'pickup-block'), 'O: pickup into the neck block flagged');
+  const cu = SB.build(par, { soundHole: 'none', pickup: 'custom', pickupLengthMm: 60, pickupWidthMm: 20, pickupCornerMm: 10 });
+  assert.ok(cu.pickups.cornerMm === 10 && Math.abs(cu.pickupAreaMm2 - (60 * 20 - (4 - Math.PI) * 100)) < 3, 'O: custom rectangle corner radius');
+  console.log(`Body O ok: ${n} soundboards export 1:1 (SVG mm viewBox, DXF mm, PDF), kerf ${SB.DEFAULTS.kerfMm} / press fit ${SB.DEFAULTS.pressFitMm}, ${styles.length} hole styles x ${KEYS.length} bodies clean, plate marks, pickups`);
+}
+
 // === Body K: random shapes stay watertight ==================================
 {
   let seed = 20261113;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   const N = +(process.env.BODY_FUZZ || 24);
   for (let i = 0; i < N; i++) {
-    const k = B.STYLE_KEYS[Math.floor(rnd() * 5)], base = B.styleParams(k);
+    const k = B.STYLE_KEYS[Math.floor(rnd() * B.STYLE_KEYS.length)], base = B.styleParams(k);
     const p = Object.assign(base, {
       lengthIn: base.lengthIn * (0.85 + rnd() * 0.3), depthIn: 1.4 + rnd() * 2.6, wallMm: 2 + rnd() * 4, floorMm: 2 + rnd() * 3,
       shelfWidthMm: 4 + rnd() * 6, shelfLipMm: 0.8 + rnd() * 2.5, shelfAllowanceMm: rnd() * 0.6,
       pocketLengthIn: 2 + rnd() * 1.2, pocketWidthIn: 1.25 + rnd() * 0.6, pocketCornerMm: rnd() * 10,
-      pocketWallMm: 2 + rnd() * 8, ribMm: 2 + rnd() * 3, pocketFloorMm: 2 + rnd() * 8, pocketEndWallMm: 2 + rnd() * 8, tieHeightMm: 5 + rnd() * 30,
+      pocketWallMm: 2 + rnd() * 8, ribMm: 2 + rnd() * 3, pocketFloorMm: 2 + rnd() * 8, pocketEndWallMm: 2 + rnd() * 8,
       neckScrewMode: rnd() < 0.5 ? 'plate' : 'wells', accessPanel: rnd() < 0.6, accessLengthMm: 60 + rnd() * 80, accessWidthMm: 40 + rnd() * 60,
       accessCornerMm: 5 + rnd() * 25, accessPos: 0.2 + rnd() * 0.3, coverThicknessMm: 2.5 + rnd() * 3, coverScrews: Math.floor(rnd() * 7),
       leftHanded: rnd() < 0.5, neckBlockRibs: rnd() < 0.5, ladderBraces: rnd() < 0.7, braceCount: 1 + Math.floor(rnd() * 4),

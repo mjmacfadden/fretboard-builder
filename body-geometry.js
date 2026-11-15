@@ -81,8 +81,7 @@
     pocketFloorMm: 6.0,      // solid plate under the pocket floor, over the cells
     ribMm: 3.0,              // ribs under the pocket and the side ties
     bossWallMm: 3.0,         // wall round each neck screw hole (or well)
-    neckBlockRibs: false,    // side ties from the pocket walls out to the rim (off: the walls stand alone)
-    tieHeightMm: 20.0,       // ... their height above the back floor
+    neckBlockRibs: false,    // one brace across the body at the neck block, ladder-brace profile, the pocket shell cutting through it (off: the walls stand alone)
     neckScrewMode: 'plate',  // 'plate' (back plate on the back face) or 'wells' (washers / ferrules)
     neckScrewSpanXIn: 0.875, // hole spacing across the neck
     neckScrewSpanYIn: 1.75,  // hole spacing along the neck
@@ -150,6 +149,13 @@
       label: 'Cigar-box style',
       values: { shape: 'box', lengthIn: 12.0, widthIn: 7.0, cornerRadiusIn: 0.5, depthIn: 3.0 }
     },
+    // A standard US license plate: 12" x 6" with 1/4" corners (fits the
+    // bed at full size: 304.8 mm + the 5 mm margin < 327.66 mm). The neck
+    // goes on one short end; the 12" axis is the body length.
+    'license-plate': {
+      label: 'License plate',
+      values: { shape: 'box', lengthIn: 12.0, widthIn: 6.0, cornerRadiusIn: 0.25, depthIn: 2.5 }
+    },
     // Single-cutaway slab body traced from t-style-body-outline.svg at
     // 12.9" long (10.52" wide). That is the whole bed, so the builder
     // scales the outline down to fit (bed minus the margin).
@@ -158,7 +164,7 @@
       values: { shape: 'tstyle', lengthIn: 12.9, widthIn: 10.52, depthIn: 1.85 }
     }
   };
-  var STYLE_KEYS = ['parlor', 'small-dread', 'round', 'cigar-box', 't-style'];
+  var STYLE_KEYS = ['parlor', 'small-dread', 'round', 'cigar-box', 'license-plate', 't-style'];
   var STYLE_FIELDS = ['shape', 'lengthIn', 'lowerWidthIn', 'waistWidthIn', 'upperWidthIn',
     'lowerPos', 'waistPos', 'upperPos', 'widthIn', 'cornerRadiusIn', 'depthIn'];
 
@@ -577,7 +583,17 @@
       });
       return out;
     });
-    var snapFace = snap;
+    // cap points: a boolean can return a wall vertex a micron or two off
+    // (its rounding); use the wall's own vertex then
+    var snapFace = function (q) {
+      if (reps.has(q.X + ',' + q.Y)) return reps.get(q.X + ',' + q.Y);
+      for (var d = 1; d <= 2; d++) for (var dx = -d; dx <= d; dx++) for (var dy = -d; dy <= d; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue;
+        var r = reps.get((q.X + dx) + ',' + (q.Y + dy));
+        if (r) return r;
+      }
+      return snap(q);
+    };
 
     // walls: merge identical edges in consecutive slabs into one tall quad
     var runs = new Map();
@@ -1044,14 +1060,17 @@
     // ---- ladder braces: straight across the back floor, parabolic
     // profile (highest mid-span), rounded crown, built as 0.5 mm slabs
     // that only ever narrow going up (support-free)
-    var bOn = p.ladderBraces, bw = clamp(p.braceWidthMm, 3, 15), br = bw / 2;
+    var bOn = p.ladderBraces, ribsOn = p.neckBlockRibs, profOn = bOn || ribsOn, bw = clamp(p.braceWidthMm, 3, 15), br = bw / 2;
     var bH = Math.min(clamp(p.braceHeightMm, 3, 40), zTaper0 - p.floorMm - 10);
     if (tabOn) bH = Math.min(bH, tabBottom - p.floorMm - 3);
-    if (bOn && bH < br + 1.5) { warnings.push('No room for ladder braces under the shelf; left out.'); bOn = false; }
-    var bEnd = bOn ? clamp(p.braceEndHeightMm, br + 0.5, bH - 0.5) : 0;
-    var bs = bOn ? bH / Math.ceil(bH / 0.5 - 1e-9) : 0.5;
+    if (profOn && bH < br + 1.5) { warnings.push('No room for ' + (bOn ? 'ladder braces' : 'the neck block brace') + ' under the shelf; left out.'); bOn = ribsOn = profOn = false; }
+    var bEnd = profOn ? clamp(p.braceEndHeightMm, br + 0.5, bH - 0.5) : 0;
+    var bs = profOn ? bH / Math.ceil(bH / 0.5 - 1e-9) : 0.5;
     var bTiers = [];                       // crown: half width by depth below the local top
-    if (bOn) {
+    // neck block brace (the "ribs" option): one brace straight across the
+    // body at mid-pocket, the ladder-brace profile over the full width
+    var yNB = yc;
+    if (profOn) {
       var mT = Math.ceil(br / bs - 1e-9);
       for (var jT = 0; jT < mT; jT++) {
         var tm = Math.min(br, jT * bs + bs / 2);
@@ -1070,6 +1089,7 @@
       braceYs = braceYs.filter(function (y) { return y - br > p.wallMm + 5 && y + br < yS0 - 3; });
       braceYs.forEach(function (y) { bTiers.forEach(function (t) { SY.push(y - t.hw, y + t.hw); }); });
     }
+    if (ribsOn) bTiers.forEach(function (t) { SY.push(yNB - t.hw, yNB + t.hw); });
     var xF = xs + 4 + p.wallMm;             // furthest a gap fill reaches (only where the rim is within 4 mm)
     [ph, xs, rib / 2, xs - rib, xs - 0.5, xF].forEach(function (v) { SX.push(v, -v); });
     SX = SX.map(function (v) { return Math.round(v * S); });
@@ -1131,23 +1151,13 @@
         filled.push(sg > 0 ? 'right' : 'left');
         return;
       }
-      if (p.neckBlockRibs) tieBands.forEach(function (tb) {
-        var piece = pieceAt(inter(rect(Math.min(sg * (xs - 0.5), sg * 400), tb[0], Math.max(sg * (xs - 0.5), sg * 400), tb[1]), O), sg * (xs - 0.25), (tb[0] + tb[1]) / 2);
-        ties = ties.concat(piece);
-      });
     });
     blockFoot = P(blockFoot);
-    ties = P(union(ties));
     // the shell's rounded outer corners can cross the rim and the shelf
     // steps: put the crossing points on both curves
     (function () {
       var m = mutualSplit(I, blockFoot); I = m[0]; blockFoot = m[1];
       for (var q = 0; q < cav.length; q++) { m = mutualSplit(cav[q], blockFoot); cav[q] = m[0]; blockFoot = m[1]; }
-      if (ties.length) {
-        m = mutualSplit(I, ties); I = m[0]; ties = m[1];
-        for (q = 0; q < cav.length; q++) { m = mutualSplit(cav[q], ties); cav[q] = m[0]; ties = m[1]; }
-        m = mutualSplit(blockFoot, ties); blockFoot = m[0]; ties = m[1];
-      }
     })();
     // ---- keep-outs for braces and tabs: neck block, ties, access ring
     var ringEarly = [];
@@ -1179,8 +1189,33 @@
       return out;
     }
 
+    // ---- neck block brace: the arc spans the full inside width at yNB
+    // (tallest on the centreline, each side tapering to the end height at
+    // its own rim); the pocket shell is solid through the middle, so each
+    // half meets the shell wall at the height the full arc has there. It
+    // stops short of the access ring if that is in the way.
+    var neckSegs = [], neckInfo = null, ImmNB = null;
+    if (ribsOn) {
+      ImmNB = pathsToMm(I);
+      var spanNB = lineIntervals(ImmNB, yNB).filter(function (r) { return r[0] < 0 && r[1] > 0; })[0];
+      if (spanNB) {
+        var KbN = ringEarly.length ? offset(ringEarly, 3) : [], freeN = pathsToMm(diff(I, KbN)), ivN = null;
+        for (var qN = 0; qN <= 8; qN++) { var liN = lineIntervals(freeN, yNB - br + bw * qN / 8); ivN = ivN === null ? liN : interIntervals(ivN, liN); }
+        // (only the main span through the centreline: not a separate horn)
+        var clearN = function (x) { if (!KbN.length) return true; for (var q2 = 0; q2 <= 8; q2++) if (inside(KbN, x, yNB - br + bw * q2 / 8)) return false; return true; };
+        (ivN || []).forEach(function (r) {
+          if (r[1] - r[0] < 5 || r[1] < spanNB[0] || r[0] > spanNB[1]) return;
+          neckSegs.push({ y: yNB, x0: r[0], x1: r[1], rim0: clearN(r[0] - 2), rim1: clearN(r[1] + 2), neck: true, X0: spanNB[0], X1: spanNB[1], rimAt: {} });
+        });
+        var hAt = function (x) { var a = x < 0 ? -spanNB[0] : spanNB[1], u = Math.min(1, Math.abs(x) / a); return bEnd + (bH - bEnd) * (1 - u * u); };
+        neckInfo = { y: yNB, yPct: 100 * yNB / L, spanMm: spanNB[1] - spanNB[0], heightCentreMm: bH, heightAtShellMm: [hAt(-xs), hAt(xs)], endHeightMm: bEnd,
+          widthMm: bw, segments: neckSegs.map(function (g) { return { x0: g.x0, x1: g.x1, ends: [g.rim0 ? 'rim' : 'stops short', g.rim1 ? 'rim' : 'stops short'] }; }) };
+        if (neckSegs.some(function (g) { return !g.rim0 || !g.rim1; })) warnings.push('The neck block brace stops short of the access panel ring.');
+      }
+    }
+
     // ---- ladder braces: segments between the rim and any keep-out
-    var braceSegs = [];
+    var braceSegs = [], braceShort = [], braceGone = [];
     if (bOn && braceYs.length) {
       var Kb = offset(union(blockFoot, ties, ringEarly), 3);
       var freeMm = pathsToMm(diff(I, Kb));
@@ -1190,30 +1225,77 @@
           var li = lineIntervals(freeMm, yb - br + bw * q / 8);
           iv = iv === null ? li : interIntervals(iv, li);
         }
+        var kept = 0;
         (iv || []).forEach(function (r) {
-          if (r[1] - r[0] < 30) return;
+          if (r[1] - r[0] < 30) { braceShort.push({ y: yb, lengthMm: r[1] - r[0] }); return; }
+          kept++;
           // an end is at the rim unless a keep-out (neck block, ties, access
           // ring) is just past it anywhere across the brace's width
           function clearOfKeep(x) { for (var q2 = 0; q2 <= 8; q2++) if (inside(Kb, x, yb - br + bw * q2 / 8)) return false; return true; }
           braceSegs.push({ y: yb, x0: r[0], x1: r[1], rim0: clearOfKeep(r[0] - 2), rim1: clearOfKeep(r[1] + 2) });
         });
+        if (!kept) braceGone.push(yb);
       });
+      braceYs = braceYs.filter(function (y) { return braceGone.indexOf(y) < 0; });
+    }
+
+    // ---- fit check: is the body wide enough for the neck block, the
+    // braces and the access panel? (clearances in mm, for the readout)
+    var fit = (function () {
+      var Imm0 = pathsToMm(I);
+      function widthAt(y) { var iv = lineIntervals(Imm0, y), w = 0; iv.forEach(function (r) { w = Math.max(w, r[1] - r[0]); }); return { w: w, iv: iv }; }
+      var atBlock = widthAt(yc), f = { innerWidthMm: widthAt(L * 0.5).w, blockWidthMm: 2 * xs, blockSideClearMm: null, access: null, bracesDropped: [], bracesShort: braceShort.slice() };
+      atBlock.iv.forEach(function (r) { if (r[0] < -xs && r[1] > xs) f.blockSideClearMm = Math.min(-xs - r[0], r[1] - xs); });
+      if (p.accessPanel) {
+        var cyA = clamp(p.accessPos, 0.1, 0.9) * L, ringHalfW = p.accessWidthMm / 2 + p.coverThicknessMm + p.accessRingMm;
+        var ringHalfL = p.accessLengthMm / 2 + p.coverThicknessMm + p.accessRingMm, wA = widthAt(cyA).w;
+        f.access = { ringWidthMm: 2 * ringHalfW, innerWidthMm: wA, sideClearMm: (wA - 2 * ringHalfW) / 2,
+          y0Pct: 100 * (cyA - ringHalfL - 3 - br) / L, y1Pct: 100 * (cyA + ringHalfL + 3 + br) / L,
+          maxOpeningForBracesMm: wA - 2 * (30 + 3 + p.coverThicknessMm + p.accessRingMm) };
+      }
+      f.bracesDropped = braceGone.map(function (y) { return { y: y, pct: 100 * y / L }; });
+      return f;
+    })();
+    if (fit.bracesDropped.length) {
+      var why = fit.access ? 'beside the access panel ring (' + fit.access.ringWidthMm.toFixed(0) + ' mm wide in a ' + fit.access.innerWidthMm.toFixed(1) + ' mm wide inside) there is only ' +
+        fit.access.sideClearMm.toFixed(1) + ' mm to the rim each side, and a brace needs about 33 mm (30 mm of brace + 3 mm clearance)' : 'the neck block and its ties leave no 30 mm run to the rim';
+      warnings.push('Fit check: ' + fit.bracesDropped.length + ' ladder brace' + (fit.bracesDropped.length > 1 ? 's' : '') + ' (at ' + fit.bracesDropped.map(function (b) { return b.pct.toFixed(0) + '%'; }).join(', ') +
+        ' of the length) left out: ' + why + '. Options: ' + (fit.access ? (fit.access.maxOpeningForBracesMm >= 30 ? 'an access opening no wider than ' + Math.floor(fit.access.maxOpeningForBracesMm) + ' mm, ' : '') +
+        'list brace positions outside ' + Math.max(0, fit.access.y0Pct).toFixed(0) + '–' + Math.min(100, fit.access.y1Pct).toFixed(0) + '% (the ring), move the opening, or turn the access panel off.' : 'move the braces towards the tail.'));
     }
     // brace footprint at height d above the floor
-    function braceAt(d) {
+    function braceAt(d, segs) {
       var parts = [];
-      braceSegs.forEach(function (g) {
+      (segs || braceSegs).forEach(function (g) {
         var xm = (g.x0 + g.x1) / 2, a = (g.x1 - g.x0) / 2;
         bTiers.forEach(function (t) {
           var q = d + t.tau, x0, x1;
           if (q > bH) return;
           if (q <= bEnd) { x0 = g.rim0 ? g.x0 - 20 : g.x0; x1 = g.rim1 ? g.x1 + 20 : g.x1; }
+          else if (g.neck) {
+            var fq = Math.sqrt(Math.max(0, 1 - (q - bEnd) / (bH - bEnd)));
+            // the inside face across this tier's band (narrower edge), so a
+            // tier end either stays clear of the rim or runs into it
+            var rl = g.rimAt[t.hw] || (g.rimAt[t.hw] = (function () {
+              var lo = -Infinity, hi = Infinity;
+              [g.y - t.hw, g.y + t.hw].forEach(function (yy) {
+                lineIntervals(ImmNB, yy).forEach(function (r) { if (r[0] < 0 && r[1] > 0) { lo = Math.max(lo, r[0]); hi = Math.min(hi, r[1]); } });
+              });
+              return [lo, hi];
+            })());
+            x0 = g.X0 * fq; x1 = g.X1 * fq;
+            x0 = g.rim0 && x0 < rl[0] + 0.3 ? rl[0] - 20 : Math.max(g.x0, x0);
+            x1 = g.rim1 && x1 > rl[1] - 0.3 ? rl[1] + 20 : Math.min(g.x1, x1);
+            if (x1 - x0 < 0.3) return;
+          }
           else { var X = a * Math.sqrt(Math.max(0, 1 - (q - bEnd) / (bH - bEnd))); if (X < 0.3) return; x0 = xm - X; x1 = xm + X; }
           parts = parts.concat(rect(x0, g.y - t.hw, x1, g.y + t.hw));
         });
       });
       return parts.length ? inter(union(parts), I) : [];
     }
+
+    if (neckSegs.length) ties = braceAt(bs / 2, neckSegs);   // the neck brace's footprint (keep-outs, volumes)
 
     // ---- screw-on top: tabs round the rim, under the glue shelf
     var tabs = [], tabShapes = [];
@@ -1222,7 +1304,7 @@
       var Imain = pathsToMm(I).filter(function (pp) { var a = 0; for (var i = 0; i < pp.length; i++) { var u = pp[i], v = pp[(i + 1) % pp.length]; a += u[0] * v[1] - v[0] * u[1]; } return a > 0; })
         .sort(function (m, n) { return n.length - m.length; })[0];
       var keep = [].concat(blockFoot, ties, ringEarly);
-      if (braceSegs.length) braceSegs.forEach(function (g) { keep = keep.concat(rect(g.x0 - 25, g.y - br, g.x1 + 25, g.y + br)); });
+      braceSegs.concat(neckSegs).forEach(function (g) { keep = keep.concat(rect(g.x0 - 25, g.y - br, g.x1 + 25, g.y + br)); });
       var Kt = offset(union(keep), 2);
       // arc-length samples of the rim's inside face
       var cum = [0];
@@ -1334,7 +1416,6 @@
       m = mutualSplit(I, cir); I = m[0]; cir = m[1];
       m = mutualSplit(blockFoot, cir); blockFoot = m[0]; cir = m[1];
       m = mutualSplit(pocket, cir); pocket = m[0]; cir = m[1];
-      if (ties.length) { m = mutualSplit(ties, cir); ties = m[0]; cir = m[1]; }
       for (var q = 0; q < cav.length; q++) { m = mutualSplit(cav[q], cir); cav[q] = m[0]; cir = m[1]; }
       return cir;
     }
@@ -1350,16 +1431,15 @@
     function S_(z0, z1, reg) { if (z1 - z0 > 1e-6 && reg.length) solids.push({ z0: z0, z1: z1, reg: reg }); }
     function V_(z0, z1, reg) { if (z1 - z0 > 1e-6 && reg.length) voids.push({ z0: z0, z1: z1, reg: reg }); }
     var ring = diff(O, I);
-    var tieTop = Math.min(p.floorMm + p.tieHeightMm, zShelf);
     S_(0, p.floorMm, O);                                   // back floor
     S_(p.floorMm, zTaper0, ring);                          // plain wall
     for (k = 0; k < nT; k++) S_(zTaper0 + k * hT, zTaper0 + (k + 1) * hT, diff(O, cav[k])); // 45-degree taper
     S_(zShelf - lip, zShelf, diff(O, cav[nT - 1]));        // shelf's straight edge, glue surface on top
     S_(zShelf, D, ring);                                   // wall round the top panel
     S_(0, zShelf, blockFoot);                              // neck block shell
-    S_(0, tieTop, ties);                                   // low ties to the rim
-    var nBL = bOn ? Math.round(bH / bs) : 0;
-    for (k = 0; k < nBL && braceSegs.length; k++) S_(p.floorMm + k * bs, p.floorMm + (k + 1) * bs, braceAt((k + 0.5) * bs));
+    var allSegs = braceSegs.concat(neckSegs);
+    var nBL = profOn ? Math.round(bH / bs) : 0;
+    for (k = 0; k < nBL && allSegs.length; k++) S_(p.floorMm + k * bs, p.floorMm + (k + 1) * bs, braceAt((k + 0.5) * bs, allSegs));
     if (tabOn && tabs.length) {
       S_(zShelf - tabDepth, zShelf, tabShapes[0]);
       for (k = 1; k < tabShapes.length; k++) S_(zShelf - tabDepth - k * STEP, zShelf - tabDepth - (k - 1) * STEP, tabShapes[k]);
@@ -1480,14 +1560,18 @@
       shelf: { zTop: zShelf, dropMm: t + al, allowanceMm: al, widthMm: sw, glueWidthMm: glueW, lipMm: lip,
         taperBottomZ: zTaper0, taperHeightMm: sw, taperDeg: 45, steps: nT, stepMm: hT, thicknessAtWallMm: lip + sw },
       topPanel: { outline: pathsToMm(topReg), sizeMm: [tbx[2] - tbx[0], tbx[3] - tbx[1]], thicknessMm: t, z0: zShelf, z1: zShelf + t,
-        topSurfaceZ: topSurf, belowRimMm: al, fitMm: p.topFitMm, areaMm2: areaMm2(topReg) },
+        topSurfaceZ: topSurf, belowRimMm: al, fitMm: p.topFitMm, areaMm2: areaMm2(topReg),
+        // for the soundboard: the opening it presses into (the rim's inside
+        // face), the glue land on the shelf, and the neck block's top
+        opening: pathsToMm(union(I)), blockFootprint: pathsToMm(union(blockFoot)) },
       pocket: { lengthMm: pl, widthMm: 2 * ph, depthMm: pocketDepth, floorZ: zF, y0: yP0, y1: L, cornerRadiusMm: pr, outline: pathsToMm(pocket) },
       neckBlock: { x0: -xs, x1: xs, y0: yS0, y1: L, heightMm: zShelf, footprintMm: [2 * xs, L - yS0], plasticUnderPocketMm: zF,
         pocketWallMm: tw, pocketEndWallMm: ew, ribMm: rib, bossWallMm: p.bossWallMm, bossDiameterMm: 2 * bossR, pocketFloorMm: p.pocketFloorMm,
-        ribs: p.neckBlockRibs, tieHeightMm: tieTop - p.floorMm, ties: ties.length, filledSides: filled,
+        ribs: !!neckInfo, neckBrace: neckInfo, filledSides: filled,
         footprintPieces: union(blockFoot, ties).filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0; }).length,
         cells: cellsOn ? { count: V0.filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0; }).length, bottomZ: p.floorMm, roofStartZ: zR0, topZ: zCellTop } : null },
       volume: { totalCm3: volTot / 1000, neckBlockCm3: volBlock / 1000 },
+      fit: fit,
       braces: bOn && braceSegs.length ? { count: braceYs.length, positionsMm: braceYs, positionsPct: braceYs.map(function (y) { return 100 * y / L; }),
         widthMm: bw, heightMm: bH, endHeightMm: bEnd, crownRadiusMm: br, stepMm: bs, profile: 'parabolic, rounded crown',
         segments: braceSegs.map(function (g) { return { y: g.y, x0: g.x0, x1: g.x1, ends: [g.rim0 ? 'rim' : 'stops short', g.rim1 ? 'rim' : 'stops short'] }; }) } : null,
