@@ -149,10 +149,10 @@ the fretboard builder.
   its underside is a **45° taper** back to the wall (0.4 mm staircase
   steps), so it prints without supports.
 - **Integral neck block, a ribbed shell** rather than a solid lump:
-  - **6 mm pocket walls** (sides and inner end) from the back floor up to
-    the shelf, so the top is glued to them too;
-  - **three 20 mm gussets** (3 mm) behind the pocket's inner end: one on
-    the centreline and one on each outer corner;
+  - **6 mm pocket side walls** and an **8 mm inner-end wall** (a little
+    thicker, as nothing braces it from behind) from the back floor up to
+    the shelf, so the top is glued to them too. Nothing runs tailward
+    past the end wall;
   - **low ties** (3 mm thick, 20 mm high) from each side wall out to the
     rim, one where the corner round meets the side and one mid-pocket.
     Where the rim comes within 4 mm of the wall (the T-Style treble side,
@@ -166,9 +166,9 @@ the fretboard builder.
   - All of these are adjustable, with a 2 mm minimum. Each neck screw
     clamps back plate, back floor, boss, plate and neck in one straight
     line.
-  - Parlor body: about 579 cm³ of plastic (847 cm³ with the old solid
+  - Parlor body: about 570 cm³ of plastic (847 cm³ with the old solid
     block).
-  - T-Style: about 492 cm³ (574 cm³ before).
+  - T-Style: about 489 cm³ (574 cm³ before).
 - **Neck pocket**: **2.75″ long × 1.5″ wide** (+0.15 mm fit each side),
   **¼″ (6.35 mm) radius** inner corners (set 0 for square), floor **0.9″
   below the top surface of the top**, open

@@ -10,7 +10,7 @@
  *     glued onto the shelf, sitting flush (or a hair below) the rim edge;
  *   - an integral neck block rising from the floor: a stiff shell round
  *     the neck pocket (2.75" x 1.5", 1/4" corner radius, floor 0.9" below
- *     the top surface) with ribs, gussets and screw bosses, for a
+ *     the top surface) with ribs, side ties and screw bosses, for a
  *     screw-on wooden neck, held by four wood screws up through the back
  *     floor and the block (through a back plate, or from counterbored
  *     wells with washers / ferrules);
@@ -76,11 +76,11 @@
     pocketDepthIn: 0.9,      // pocket floor below the top surface of the top panel
     pocketFitMm: 0.15,       // added to each side of the pocket width
     pocketCornerMm: 6.35,    // 1/4" radius on the pocket's two inner corners
-    pocketWallMm: 6.0,       // neck block shell: walls round the pocket (sides and end)
+    pocketWallMm: 6.0,       // neck block shell: the pocket's side walls
+    pocketEndWallMm: 8.0,    // ... and its inner-end wall (a little thicker: nothing braces it from behind)
     pocketFloorMm: 6.0,      // solid plate under the pocket floor, over the cells
-    ribMm: 3.0,              // ribs under the pocket, gussets and ties
+    ribMm: 3.0,              // ribs under the pocket and the side ties
     bossWallMm: 3.0,         // wall round each neck screw hole (or well)
-    gussetLengthMm: 20.0,    // three gussets behind the pocket's end wall, full height
     tieHeightMm: 20.0,       // low ties from the shell's sides out to the rim
     neckScrewMode: 'plate',  // 'plate' (back plate on the back face) or 'wells' (washers / ferrules)
     neckScrewSpanXIn: 0.875, // hole spacing across the neck
@@ -967,16 +967,15 @@
     var ph = p.pocketWidthIn * IN / 2 + p.pocketFitMm, pl = p.pocketLengthIn * IN;
     var pr = clamp(p.pocketCornerMm, 0, ph - 0.5);
     if (pr < 0.5) pr = 0;                   // a sub-0.5 mm radius is a square corner
-    ['pocketWallMm', 'ribMm', 'bossWallMm', 'pocketFloorMm'].forEach(function (key) {
+    ['pocketWallMm', 'pocketEndWallMm', 'ribMm', 'bossWallMm', 'pocketFloorMm'].forEach(function (key) {
       if (!(p[key] >= 2)) { warnings.push('Neck block walls thinner than 2 mm are too weak; ' + key + ' set to 2 mm.'); p[key] = 2; }
     });
-    var tw = p.pocketWallMm, rib = p.ribMm;
+    var tw = p.pocketWallMm, ew = p.pocketEndWallMm, rib = p.ribMm;
     var yP0 = L - pl;                       // inner end of the pocket
-    var yS0 = yP0 - tw;                     // outer face of the shell's end wall
+    var yS0 = yP0 - ew;                     // outer face of the shell's end wall
     var xs = ph + tw;                       // outer face of the shell's side walls
     var prO = pr > 0 ? pr + tw : 0;         // radius of the shell's outer corners
-    var G = p.gussetLengthMm >= 2 ? p.gussetLengthMm : 0, yG0 = yS0 - G;
-    if (yG0 < L * 0.4) warnings.push('The neck block reaches past 60% of the body length; check the pocket length and gussets.');
+    if (yS0 < L * 0.4) warnings.push('The neck block reaches past 60% of the body length; check the pocket length.');
     var sxs = p.neckScrewSpanXIn * IN / 2, sys = p.neckScrewSpanYIn * IN / 2, yc = L - pl / 2, hr = p.neckScrewHoleMm / 2;
     var holes = [[-sxs, yc - sys], [sxs, yc - sys], [-sxs, yc + sys], [sxs, yc + sys]];
     if (sxs + hr > ph - 1 || sys + hr > pl / 2 - 1) warnings.push('The neck screw holes come within 1 mm of the pocket walls; tighten the hole spacing.');
@@ -994,7 +993,7 @@
 
     // ---- 2D regions (microns). Curves are presplit at every straight
     // cut line so booleans never invent crossing points.
-    var SX = [], SY = [yP0, yS0, yT0, yT0 + rib, yG0, yS0 + 0.5, yS0 + prO + 0.5, yc - rib / 2, yc + rib / 2];
+    var SX = [], SY = [yP0, yS0, yT0, yT0 + rib, yc - rib / 2, yc + rib / 2];
     var xF = xs + 4 + p.wallMm;             // furthest a gap fill reaches (only where the rim is within 4 mm)
     [ph, xs, rib / 2, xs - rib, xs - 0.5, xF].forEach(function (v) { SX.push(v, -v); });
     SX = SX.map(function (v) { return Math.round(v * S); });
@@ -1026,17 +1025,13 @@
     }
     // The neck block is a shell, not a lump: walls tw thick round the
     // pocket (rising from the floor to the shelf, so the top is glued to
-    // them), tied into the rim at the neck end, with gussets behind the
-    // end wall and low ties out to the rim each side. Under the pocket a
+    // them; the inner-end wall ew thick), tied into the rim at the neck
+    // end, with low ties out to the rim each side. Under the pocket a
     // solid floor plate (pocketFloorMm) carries the neck; below it, ribs
     // and four screw bosses run down to the back floor, and the cells
     // between them close at 45 degrees under the plate (sealed, no supports).
     var shellOuter = inter(pocketShape(xs, yS0, pr > 0 ? pr + tw : 0), O);
-    var gussets = [];
-    // one on the centreline, one on each outer corner (running up past the
-    // corner round into the straight side wall)
-    if (G > 0) [[-rib / 2, rib / 2, yS0 + 0.5], [xs - rib, xs, yS0 + prO + 0.5], [-xs, -xs + rib, yS0 + prO + 0.5]].forEach(function (g) { gussets = gussets.concat(rect(g[0], yG0, g[1], g[2])); });
-    var blockFoot = union(shellOuter, inter(gussets, O));
+    var blockFoot = shellOuter;
     var ties = [], filled = [];
     [-1, 1].forEach(function (sg) {
       // where the rim comes within 4 mm of the shell (the T-Style treble
@@ -1127,7 +1122,7 @@
     for (k = 0; k < nT; k++) S_(zTaper0 + k * hT, zTaper0 + (k + 1) * hT, diff(O, cav[k])); // 45-degree taper
     S_(zShelf - lip, zShelf, diff(O, cav[nT - 1]));        // shelf's straight edge, glue surface on top
     S_(zShelf, D, ring);                                   // wall round the top panel
-    S_(0, zShelf, blockFoot);                              // neck block shell + gussets
+    S_(0, zShelf, blockFoot);                              // neck block shell
     S_(0, tieTop, ties);                                   // low ties to the rim
     V_(zF, D + 1, pocket);
     if (cellsOn) {
@@ -1245,8 +1240,8 @@
         topSurfaceZ: topSurf, belowRimMm: al, fitMm: p.topFitMm, areaMm2: areaMm2(topReg) },
       pocket: { lengthMm: pl, widthMm: 2 * ph, depthMm: pocketDepth, floorZ: zF, y0: yP0, y1: L, cornerRadiusMm: pr, outline: pathsToMm(pocket) },
       neckBlock: { x0: -xs, x1: xs, y0: yS0, y1: L, heightMm: zShelf, footprintMm: [2 * xs, L - yS0], plasticUnderPocketMm: zF,
-        pocketWallMm: tw, ribMm: rib, bossWallMm: p.bossWallMm, bossDiameterMm: 2 * bossR, pocketFloorMm: p.pocketFloorMm,
-        gussetLengthMm: G, gussets: G > 0 ? 3 : 0, tieHeightMm: tieTop - p.floorMm, ties: ties.length, filledSides: filled,
+        pocketWallMm: tw, pocketEndWallMm: ew, ribMm: rib, bossWallMm: p.bossWallMm, bossDiameterMm: 2 * bossR, pocketFloorMm: p.pocketFloorMm,
+        tieHeightMm: tieTop - p.floorMm, ties: ties.length, filledSides: filled,
         footprintPieces: union(blockFoot, ties).filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0; }).length,
         cells: cellsOn ? { count: V0.filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0; }).length, bottomZ: p.floorMm, roofStartZ: zR0, topZ: zCellTop } : null },
       volume: { totalCm3: volTot / 1000, neckBlockCm3: volBlock / 1000 },

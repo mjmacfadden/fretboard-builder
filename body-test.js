@@ -157,13 +157,14 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     assert.strictEqual(B.matchStyle(edited), 'custom', `A: editing ${k} -> custom`);
   });
   // the clamshell is gone: no halves, channels, lips, collars, bolts
-  ['channelDepthMm', 'lipMm', 'panelFitMm', 'neckCollar', 'neckBolts', 'tailBolts', 'boltSize', 'baseBlockMm', 'tailBlockLengthMm', 'neckBlockSideMm', 'neckBlockEndMm'].forEach(k =>
+  ['channelDepthMm', 'lipMm', 'panelFitMm', 'neckCollar', 'neckBolts', 'tailBolts', 'boltSize', 'baseBlockMm', 'tailBlockLengthMm', 'neckBlockSideMm', 'neckBlockEndMm', 'gussetLengthMm'].forEach(k =>
     assert.ok(!(k in B.DEFAULTS), `A: obsolete clamshell parameter ${k} removed`));
   assert.strictEqual(B.DEFAULTS.pocketLengthIn, 2.75, 'A: pocket 2.75in long');
   assert.strictEqual(B.DEFAULTS.pocketWidthIn, 1.5, 'A: pocket 1.5in wide');
   assert.strictEqual(B.DEFAULTS.pocketDepthIn, 0.9, 'A: pocket floor 0.9in down');
   assert.strictEqual(B.DEFAULTS.pocketCornerMm, 6.35, 'A: pocket corners 1/4in radius');
-  assert.strictEqual(B.DEFAULTS.pocketWallMm, 6, 'A: 6 mm pocket shell walls');
+  assert.strictEqual(B.DEFAULTS.pocketWallMm, 6, 'A: 6 mm pocket side walls');
+  assert.strictEqual(B.DEFAULTS.pocketEndWallMm, 8, 'A: 8 mm pocket end wall');
   assert.strictEqual(B.DEFAULTS.neckScrewMode, 'plate', 'A: back plate (no wells) by default');
   assert.strictEqual(B.DEFAULTS.bedMarginMm, 5, 'A: 5 mm bed margin');
   assert.strictEqual(B.DEFAULTS.wallMm, 3, 'A: 3 mm walls');
@@ -270,8 +271,10 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     assert.ok(solid(r, hw - 2, y0 + 5, pk.floorZ - 0.05), `D: ${k} pocket floor is solid block`);
     assert.ok(!solid(r, hw - 2, y0 + 5, pk.floorZ + 0.05), `D: ${k} open above the floor`);
     // the shell walls are integral: solid from the back up to the shelf
-    assert.ok(solid(r, hw + 5, y0 - 5, 1) && solid(r, hw + 5, y0 - 5, m.shelf.zTop - 0.05), `D: ${k} block from floor to shelf`);
-    assert.ok(!solid(r, hw + 5, y0 - 5, m.shelf.zTop + 0.05), `D: ${k} top panel sits on the block`);
+    [[0, y0 - 4], [hw + 3, y0 + 20]].forEach(([x, y]) => {
+      assert.ok(solid(r, x, y, 1) && solid(r, x, y, m.shelf.zTop - 0.05), `D: ${k} block walls from floor to shelf`);
+      assert.ok(!solid(r, x, y, m.shelf.zTop + 0.05), `D: ${k} top panel sits on the block walls`);
+    });
   });
   // never scaled: pocket size identical however long the body
   const a = B.build(P('parlor', { lengthIn: 10 })).meta.pocket, b2 = B.build(P('parlor', { lengthIn: 16 })).meta.pocket;
@@ -435,12 +438,15 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   B.STYLE_KEYS.forEach(k => {
     const r = build(`${k}-false-plate`, P(k)), m = r.meta, nb = m.neckBlock, pk = m.pocket;
     const hw = pk.widthMm / 2, y0 = pk.y0, L = m.L, yc = L - pk.lengthMm / 2, zm = (pk.floorZ + m.shelf.zTop) / 2;
-    assert.strictEqual(nb.footprintPieces, 1, `L: ${k} walls, gussets and ties are one connected piece`);
-    assert.ok(nb.pocketWallMm >= 2 && nb.ribMm >= 2 && nb.bossWallMm >= 2 && nb.pocketFloorMm >= 2, `L: ${k} every block wall at least 2 mm`);
+    assert.strictEqual(nb.footprintPieces, 1, `L: ${k} walls and ties are one connected piece`);
+    assert.ok(nb.pocketWallMm >= 2 && nb.pocketEndWallMm >= 2 && nb.ribMm >= 2 && nb.bossWallMm >= 2 && nb.pocketFloorMm >= 2, `L: ${k} every block wall at least 2 mm`);
     // pocket walls tw thick, side and end, up to the shelf
-    const tw = nb.pocketWallMm;
-    assert.ok(solid(r, hw + tw - 0.2, yc + 5, zm) && solid(r, 0, y0 - tw + 0.2, zm), `L: ${k} ${tw} mm side and end walls`);
-    assert.ok(!solid(r, 0, y0 - tw - 0.2 - nb.gussetLengthMm - 1, zm), `L: ${k} hollow behind the gussets`);
+    const tw = nb.pocketWallMm, ew = nb.pocketEndWallMm;
+    assert.ok(solid(r, hw + tw - 0.2, yc + 5, zm) && solid(r, 0, y0 - ew + 0.2, zm), `L: ${k} ${tw} mm side walls, ${ew} mm end wall`);
+    approx(nb.y0, y0 - ew, 1e-6, `L: ${k} block ends at the end wall`);
+    // no gussets: nothing behind the end wall, at any height
+    [m.floorMm + 0.5, m.floorMm + 2, zm].forEach(z => [0, hw, hw + tw - 1, -hw].forEach(x =>
+      assert.ok(!solid(r, x, y0 - ew - 0.3, z) && !solid(r, x, y0 - ew - 10, z), `L: ${k} hollow behind the end wall at x=${x.toFixed(1)}, z=${z.toFixed(1)}`)));
     if (!nb.filledSides.includes('right')) {
       assert.ok(!solid(r, hw + tw + 0.3, yc + 5, zm), `L: ${k} hollow outside the side wall above the ties`);
       assert.ok(solid(r, hw + tw + 1, yc, m.floorMm + 1), `L: ${k} low tie from the side wall towards the rim`);
@@ -468,7 +474,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   const thin = B.build(P('parlor', { pocketWallMm: 1, ribMm: 1 }));
   assert.ok(thin.meta.neckBlock.pocketWallMm === 2 && thin.meta.neckBlock.ribMm === 2 && thin.warnings.some(w => /thinner than 2 mm/.test(w)), 'L: block walls clamped to 2 mm');
   assert.strictEqual(edgeErrors(thin.body), 0, 'L: thinnest shell watertight');
-  console.log(`Body L ok: ${build('parlor-false-plate').meta.neckBlock.pocketWallMm} mm shell walls, 3 gussets, ties or gap fill, ${build('parlor-false-plate').meta.neckBlock.bossDiameterMm.toFixed(1)} mm bosses, 4 sealed cells; parlor ${par.totalCm3.toFixed(0)} cm3 total`);
+  console.log(`Body L ok: ${build('parlor-false-plate').meta.neckBlock.pocketWallMm} mm shell walls, ${build('parlor-false-plate').meta.neckBlock.pocketEndWallMm} mm end wall, no gussets, ties or gap fill, ${build('parlor-false-plate').meta.neckBlock.bossDiameterMm.toFixed(1)} mm bosses, 4 sealed cells; parlor ${par.totalCm3.toFixed(0)} cm3 total`);
 }
 
 // === Body K: random shapes stay watertight ==================================
@@ -482,7 +488,7 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
       lengthIn: base.lengthIn * (0.85 + rnd() * 0.3), depthIn: 1.4 + rnd() * 2.6, wallMm: 2 + rnd() * 4, floorMm: 2 + rnd() * 3,
       shelfWidthMm: 4 + rnd() * 6, shelfLipMm: 0.8 + rnd() * 2.5, shelfAllowanceMm: rnd() * 0.6,
       pocketLengthIn: 2 + rnd() * 1.2, pocketWidthIn: 1.25 + rnd() * 0.6, pocketCornerMm: rnd() * 10,
-      pocketWallMm: 2 + rnd() * 8, ribMm: 2 + rnd() * 3, pocketFloorMm: 2 + rnd() * 8, gussetLengthMm: rnd() * 30, tieHeightMm: 5 + rnd() * 30,
+      pocketWallMm: 2 + rnd() * 8, ribMm: 2 + rnd() * 3, pocketFloorMm: 2 + rnd() * 8, pocketEndWallMm: 2 + rnd() * 8, tieHeightMm: 5 + rnd() * 30,
       neckScrewMode: rnd() < 0.5 ? 'plate' : 'wells', accessPanel: rnd() < 0.6, accessLengthMm: 60 + rnd() * 80, accessWidthMm: 40 + rnd() * 60,
       accessCornerMm: 5 + rnd() * 25, accessPos: 0.2 + rnd() * 0.3, coverThicknessMm: 2.5 + rnd() * 3, coverScrews: Math.floor(rnd() * 7),
       leftHanded: rnd() < 0.5

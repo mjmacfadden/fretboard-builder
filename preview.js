@@ -5,6 +5,11 @@
  * shift-drag to pan, scroll to zoom (0.5x to 64x, toward the cursor),
  * double-click to reset the view.
  *
+ * Drawn with WebGL and a depth buffer when the browser has it (exact
+ * hidden-surface removal: thin walls and long rim faces never show
+ * through each other); otherwise a canvas-2D painter's sort, which can
+ * mis-order long thin faces and leave ragged edges or see-through slivers.
+ *
  * Browser: window.Preview3D.create(container, fallbackEl) ->
  *   { setScene(layers, keepView), draw(), canvas }
  * where layers = [{ tris: Float32Array (9 per triangle, mm), color: [r, g, b] }].
@@ -22,9 +27,17 @@
     canvas.style.cursor = 'grab';
     canvas.title = 'Drag to spin · right-drag to pan · scroll to zoom · double-click to reset';
     container.appendChild(canvas);
-    var ctx = null;
-    try { ctx = canvas.getContext && canvas.getContext('2d'); } catch (e) { ctx = null; }
-    if (!ctx) {
+    var ctx = null, gl = null;
+    var prog = null, glBufs = [], U = {};   // WebGL program, per-layer buffers, locations
+    try {
+      gl = canvas.getContext && (canvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: true }) ||
+        canvas.getContext('experimental-webgl', { antialias: true, preserveDrawingBuffer: true }));
+    } catch (e) { gl = null; }
+    if (gl && !initGL()) gl = null;
+    if (!gl) {
+      try { ctx = canvas.getContext && canvas.getContext('2d'); } catch (e) { ctx = null; }
+    }
+    if (!gl && !ctx) {
       fallbackEl.hidden = false;
       container.style.display = 'none';
       return null;
@@ -93,6 +106,7 @@
     function setScene(layers, keepView) {
       tris = layers;
       groupNormals = layers.map(function (l) { return computeNormals(l.tris); });
+      if (gl) uploadGL();
       var min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
       layers.forEach(function (l) {
         var all = l.tris;
@@ -119,9 +133,84 @@
       return 'rgb(' + Math.round(c[0] * s) + ',' + Math.round(c[1] * s) + ',' + Math.round(c[2] * s) + ')';
     }
 
+    // ---- WebGL path: same orthographic view, light and shading as the
+    // canvas-2D path below, but with a depth buffer.
+    function initGL() {
+      var vs = [
+        'attribute vec3 aPos; attribute vec3 aNrm;',
+        'uniform vec3 uCenter; uniform vec4 uRot; uniform vec4 uView; uniform float uDepth; uniform float uH;',
+        'uniform vec3 uLight; uniform vec3 uColor; varying vec3 vCol;',
+        'void main() {',
+        '  vec3 p = aPos - uCenter;',
+        '  float rx = p.x * uRot.x - p.y * uRot.y, ry = p.x * uRot.y + p.y * uRot.x;',
+        '  float vy = ry * uRot.z - p.z * uRot.w, vz = ry * uRot.w + p.z * uRot.z;',
+        '  float nrx = aNrm.x * uRot.x - aNrm.y * uRot.y, nry = aNrm.x * uRot.y + aNrm.y * uRot.x;',
+        '  vec3 n = vec3(nrx, nry * uRot.z - aNrm.z * uRot.w, nry * uRot.w + aNrm.z * uRot.z);',
+        '  float sh = 0.42 + 0.58 * max(0.0, dot(n, uLight));',
+        '  vCol = uColor * sh;',
+        // uView = (scale, panX, panY, canvas width) in canvas pixels, uH = canvas
+        // height; uDepth scales view y (away from the viewer) into clip z
+        '  gl_Position = vec4((rx * uView.x + uView.y) * 2.0 / uView.w, (vz * uView.x - uView.z) * 2.0 / uH, vy * uDepth, 1.0);',
+        '}'].join('\n');
+      var fs = 'precision mediump float; varying vec3 vCol; void main() { gl_FragColor = vec4(vCol, 1.0); }';
+      function sh(type, src) {
+        var o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o);
+        return gl.getShaderParameter(o, gl.COMPILE_STATUS) ? o : null;
+      }
+      var v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+      if (!v || !f) return false;
+      prog = gl.createProgram(); gl.attachShader(prog, v); gl.attachShader(prog, f); gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return false;
+      ['uCenter', 'uRot', 'uView', 'uDepth', 'uH', 'uLight', 'uColor'].forEach(function (n) { U[n] = gl.getUniformLocation(prog, n); });
+      U.aPos = gl.getAttribLocation(prog, 'aPos'); U.aNrm = gl.getAttribLocation(prog, 'aNrm');
+      return true;
+    }
+    function uploadGL() {
+      glBufs.forEach(function (b) { gl.deleteBuffer(b.pos); gl.deleteBuffer(b.nrm); });
+      glBufs = tris.map(function (l, i) {
+        if (!l.tris || !l.tris.length) return null;
+        var pos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, pos);
+        gl.bufferData(gl.ARRAY_BUFFER, l.tris instanceof Float32Array ? l.tris : new Float32Array(l.tris), gl.STATIC_DRAW);
+        var nrm = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, nrm);
+        gl.bufferData(gl.ARRAY_BUFFER, groupNormals[i], gl.STATIC_DRAW);
+        return { pos: pos, nrm: nrm, n: l.tris.length / 3, color: l.color || [208, 170, 112] };
+      }).filter(Boolean);
+    }
+    function drawGL(W, H, cosA, sinA, cosE, sinE, scale, lx, ly, lz) {
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(0, 0, 0, 0); gl.clearDepth(1);
+      gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      if (!glBufs.length) return;
+      gl.useProgram(prog);
+      gl.uniform3f(U.uCenter, center[0], center[1], center[2]);
+      gl.uniform4f(U.uRot, cosA, sinA, cosE, sinE);
+      gl.uniform4f(U.uView, scale, panX, panY, W);
+      gl.uniform1f(U.uH, H);
+      // view y (away from the viewer) into clip z; everything lies well
+      // within a few radii of the view centre
+      var reach = 4 * radius + Math.abs(center[0] - home[0]) + Math.abs(center[1] - home[1]) + Math.abs(center[2] - home[2]);
+      gl.uniform1f(U.uDepth, 1 / reach);
+      gl.uniform3f(U.uLight, lx, ly, lz);
+      glBufs.forEach(function (b) {
+        gl.uniform3f(U.uColor, b.color[0] / 255, b.color[1] / 255, b.color[2] / 255);
+        gl.bindBuffer(gl.ARRAY_BUFFER, b.pos); gl.enableVertexAttribArray(U.aPos); gl.vertexAttribPointer(U.aPos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, b.nrm); gl.enableVertexAttribArray(U.aNrm); gl.vertexAttribPointer(U.aNrm, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, b.n);
+      });
+    }
+
     function draw() {
       var W = canvas.width, H = canvas.height;
       if (!W || !H) return;
+      if (gl) {
+        if (!tris) { gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); return; }
+        var cA = Math.cos(az), sA = Math.sin(az), cE = Math.cos(el), sE = Math.sin(el);
+        var sc = (Math.max(W, H) * 0.46 / radius) * zoom;
+        var l0 = -0.45, l1 = -0.35, l2 = 0.82, ln = Math.sqrt(l0 * l0 + l1 * l1 + l2 * l2);
+        drawGL(W, H, cA, sA, cE, sE, sc, l0 / ln, l1 / ln, l2 / ln);
+        return;
+      }
       ctx.clearRect(0, 0, W, H);
       if (!tris) return;
 

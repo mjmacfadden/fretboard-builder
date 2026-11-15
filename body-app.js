@@ -15,7 +15,7 @@
   var NUM_FIELDS = ['lengthIn', 'lowerWidthIn', 'waistWidthIn', 'upperWidthIn', 'widthIn', 'cornerRadiusIn',
     'depthIn', 'lowerPos', 'waistPos', 'upperPos', 'wallMm', 'floorMm', 'panelThicknessMm', 'shelfAllowanceMm',
     'shelfWidthMm', 'shelfLipMm', 'topFitMm', 'pocketLengthIn', 'pocketWidthIn', 'pocketDepthIn', 'pocketFitMm',
-    'pocketCornerMm', 'pocketWallMm', 'pocketFloorMm', 'ribMm', 'bossWallMm', 'gussetLengthMm', 'tieHeightMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
+    'pocketCornerMm', 'pocketWallMm', 'pocketEndWallMm', 'pocketFloorMm', 'ribMm', 'bossWallMm', 'tieHeightMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
     'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm', 'accessLengthMm', 'accessWidthMm',
     'accessCornerMm', 'accessPos', 'coverThicknessMm', 'coverFitMm', 'accessRingMm', 'accessRingHeightMm',
     'coverScrews', 'coverScrewHoleMm', 'coverScrewClearMm', 'bedMarginMm'];
@@ -119,8 +119,7 @@
     $('pocket-out').textContent = (pk.lengthMm / IN).toFixed(2) + '″ long × ' + (pk.widthMm / IN).toFixed(3) + '″ wide, ' + (pk.cornerRadiusMm === 0 ? 'square corners' : (Math.abs(pk.cornerRadiusMm - 6.35) < 1e-6 ? '¼″ (6.35 mm)' : pk.cornerRadiusMm.toFixed(2) + ' mm') + ' radius corners') + ', floor ' +
       (pk.depthMm / IN).toFixed(2) + '″ below the top surface (never scaled)';
     var nb = m.neckBlock;
-    $('block-out').textContent = 'integral ribbed shell, ' + fmtMm(nb.pocketWallMm) + ' walls from the back floor up to the shelf, ' +
-      nb.gussets + ' gussets behind the pocket, ' + (nb.filledSides.length ? 'gap to the rim filled on the ' + nb.filledSides.join(' and ') + ' side, ' : '') +
+    $('block-out').textContent = 'integral ribbed shell, ' + fmtMm(nb.pocketWallMm) + ' side walls and ' + fmtMm(nb.pocketEndWallMm) + ' end wall from the back floor up to the shelf, ' + (nb.filledSides.length ? 'gap to the rim filled on the ' + nb.filledSides.join(' and ') + ' side, ' : '') +
       (nb.ties ? nb.ties + ' low ties to the rim, ' : '') + fmtMm(nb.pocketFloorMm) + ' plate under the pocket floor' +
       (nb.cells ? ' over ' + nb.cells.count + ' sealed cells with ' + fmtMm(nb.ribMm) + ' ribs and ' + nb.bossDiameterMm.toFixed(1) + ' mm screw bosses' : ' (solid below it)') +
       '; ' + (nb.footprintMm[0] / IN).toFixed(2) + '″ × ' + (nb.footprintMm[1] / IN).toFixed(2) + '″; body ' + m.volume.totalCm3.toFixed(0) + ' cm³ (block ' + m.volume.neckBlockCm3.toFixed(0) + ' cm³)';
