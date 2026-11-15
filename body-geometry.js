@@ -81,7 +81,8 @@
     pocketFloorMm: 6.0,      // solid plate under the pocket floor, over the cells
     ribMm: 3.0,              // ribs under the pocket and the side ties
     bossWallMm: 3.0,         // wall round each neck screw hole (or well)
-    tieHeightMm: 20.0,       // low ties from the shell's sides out to the rim
+    neckBlockRibs: false,    // side ties from the pocket walls out to the rim (off: the walls stand alone)
+    tieHeightMm: 20.0,       // ... their height above the back floor
     neckScrewMode: 'plate',  // 'plate' (back plate on the back face) or 'wells' (washers / ferrules)
     neckScrewSpanXIn: 0.875, // hole spacing across the neck
     neckScrewSpanYIn: 1.75,  // hole spacing along the neck
@@ -102,10 +103,30 @@
     coverScrews: 4,          // small screws holding the cover (0 = none: glue / tape / friction)
     coverScrewHoleMm: 2.0,   // pilot hole in the body ring (#2 / M2.5 self-tapping)
     coverScrewClearMm: 2.8,  // clearance hole in the cover
+    ladderBraces: true,      // ladder braces across the inside of the back floor
+    braceCount: 3,           // how many (spread evenly from the tail to the neck block) ...
+    bracePositions: '',      // ... or their centres as % of the body length from the tail, e.g. '25, 45, 65'
+    braceWidthMm: 7.0,
+    braceHeightMm: 12.0,     // at the centre (the profile is a parabola, with a rounded crown)
+    braceEndHeightMm: 4.5,   // where each brace meets the rim (or stops short of the access ring)
+    screwTop: false,         // screw the top on (tabs round the rim under the shelf) instead of gluing it
+    topScrewCount: 0,        // 0 = automatic (6-10 by the size of the body)
+    topScrewSize: '#4',      // '#4', '#6' or '#8' coarse-thread wood / thread-forming screws
+    topScrewHead: 'pan',     // 'pan' (clearance hole + head circle marked) or 'flat' (countersunk)
+    tabBossMm: 11.0,         // screw tab boss diameter: room to re-drill #4 -> #6 -> #8
+    tabDepthMm: 12.0,        // full-size tab below the glue surface, before its 45-degree underside
     bedMm: 327.66,           // 12.9"
     bedMarginMm: 5.0,        // the body must be this much shorter / narrower than the bed
     fitBed: true,            // scale the outline (only) down to fit the bed
     leftHanded: false        // mirror asymmetric outlines (cutaway on the other side)
+  };
+
+  // Top screws (coarse-thread wood / plastic thread-forming, no inserts):
+  // pilot in the printed tab, clearance in the ply top, head diameters.
+  var TOP_SCREWS = {
+    '#4': { pilotMm: 2.3, clearanceMm: 3.2, panHeadMm: 5.6, flatHeadMm: 5.7, lengthIn: 0.5 },
+    '#6': { pilotMm: 2.8, clearanceMm: 3.8, panHeadMm: 6.9, flatHeadMm: 7.1, lengthIn: 0.5 },
+    '#8': { pilotMm: 3.3, clearanceMm: 4.5, panHeadMm: 8.2, flatHeadMm: 8.4, lengthIn: 0.625 }
   };
 
   // Body style presets (generic names). Values not listed keep defaults.
@@ -846,11 +867,19 @@
   // their own crossings differently in each slab. Mutates nothing.
   function mutualSplit(a, b) {
     var addA = a.map(function () { return []; }), addB = b.map(function () { return []; });
+    var bb = b.map(function (pb) {
+      var r = [Infinity, Infinity, -Infinity, -Infinity];
+      pb.forEach(function (q) { if (q.X < r[0]) r[0] = q.X; if (q.Y < r[1]) r[1] = q.Y; if (q.X > r[2]) r[2] = q.X; if (q.Y > r[3]) r[3] = q.Y; });
+      return r;
+    });
     a.forEach(function (pa, ia) {
       var na = pa.length;
       for (var i = 0; i < na; i++) {
         var p1 = pa[i], p2 = pa[(i + 1) % na];
+        var ex0 = Math.min(p1.X, p2.X), ex1 = Math.max(p1.X, p2.X), ey0 = Math.min(p1.Y, p2.Y), ey1 = Math.max(p1.Y, p2.Y);
         b.forEach(function (pb, ib) {
+          var r = bb[ib];
+          if (ex1 < r[0] || ex0 > r[2] || ey1 < r[1] || ey0 > r[3]) return;
           var nb = pb.length;
           for (var j = 0; j < nb; j++) {
             var q1 = pb[j], q2 = pb[(j + 1) % nb];
@@ -923,6 +952,12 @@
     p.accessPanel = p.accessPanel === true || p.accessPanel === 'true' || p.accessPanel === 1;
     p.fitBed = !(p.fitBed === false || p.fitBed === 'false' || p.fitBed === 0);
     p.leftHanded = p.leftHanded === true || p.leftHanded === 'true' || p.leftHanded === 1;
+    function bool(v) { return v === true || v === 'true' || v === 1; }
+    p.neckBlockRibs = bool(p.neckBlockRibs);
+    p.ladderBraces = !(p.ladderBraces === false || p.ladderBraces === 'false' || p.ladderBraces === 0);
+    p.screwTop = bool(p.screwTop);
+    if (!TOP_SCREWS[p.topScrewSize]) p.topScrewSize = '#4';
+    if (p.topScrewHead !== 'flat') p.topScrewHead = 'pan';
     var warnings = [];
     if (!(p.wallMm >= WALL_MIN)) { warnings.push('Walls thinner than ' + WALL_MIN + ' mm are too weak; using ' + WALL_MIN + ' mm.'); p.wallMm = WALL_MIN; }
     if (!(p.floorMm >= FLOOR_MIN_MM)) { warnings.push('Back floor thinner than ' + FLOOR_MIN_MM + ' mm is too weak; using ' + FLOOR_MIN_MM + ' mm.'); p.floorMm = FLOOR_MIN_MM; }
@@ -994,6 +1029,47 @@
     // ---- 2D regions (microns). Curves are presplit at every straight
     // cut line so booleans never invent crossing points.
     var SX = [], SY = [yP0, yS0, yT0, yT0 + rib, yc - rib / 2, yc + rib / 2];
+
+    // ---- screw-on top: tab sizes (placed further down, once the braces are known)
+    var tScrew = TOP_SCREWS[p.topScrewSize], tabR = clamp(p.tabBossMm, 8, 16) / 2;
+    var tabC = tabR + 0.5;                 // hole centre in from the rim's inside face
+    var tabDepth = clamp(p.tabDepthMm, 6, 30), tabHole = tabDepth - 1;
+    var tabOn = p.screwTop;
+    if (tabOn && zShelf - tabDepth - tabC - tabR < p.floorMm + 2) {
+      tabDepth = zShelf - tabC - tabR - p.floorMm - 2; tabHole = tabDepth - 1;
+      if (tabHole < 6) { warnings.push('The body is too shallow for screw-on top tabs; glue the top instead.'); tabOn = false; }
+    }
+    var tabBottom = zShelf - tabDepth - Math.ceil((tabC + tabR - 0.2) / STEP) * STEP;
+
+    // ---- ladder braces: straight across the back floor, parabolic
+    // profile (highest mid-span), rounded crown, built as 0.5 mm slabs
+    // that only ever narrow going up (support-free)
+    var bOn = p.ladderBraces, bw = clamp(p.braceWidthMm, 3, 15), br = bw / 2;
+    var bH = Math.min(clamp(p.braceHeightMm, 3, 40), zTaper0 - p.floorMm - 10);
+    if (tabOn) bH = Math.min(bH, tabBottom - p.floorMm - 3);
+    if (bOn && bH < br + 1.5) { warnings.push('No room for ladder braces under the shelf; left out.'); bOn = false; }
+    var bEnd = bOn ? clamp(p.braceEndHeightMm, br + 0.5, bH - 0.5) : 0;
+    var bs = bOn ? bH / Math.ceil(bH / 0.5 - 1e-9) : 0.5;
+    var bTiers = [];                       // crown: half width by depth below the local top
+    if (bOn) {
+      var mT = Math.ceil(br / bs - 1e-9);
+      for (var jT = 0; jT < mT; jT++) {
+        var tm = Math.min(br, jT * bs + bs / 2);
+        bTiers.push({ tau: jT * bs, hw: Math.sqrt(Math.max(0, br * br - (br - tm) * (br - tm))) });
+      }
+      bTiers.push({ tau: br, hw: br });
+    }
+    var braceYs = [];
+    if (bOn) {
+      var listed = String(p.bracePositions || '').split(/[ ,;]+/).map(parseFloat).filter(function (v) { return isFinite(v) && v > 2 && v < 98; });
+      if (listed.length) braceYs = listed.map(function (v) { return v / 100 * L; });
+      else {
+        var nB = Math.max(0, Math.min(8, Math.round(p.braceCount))), yb0 = 0.12 * L, yb1 = yS0 - 12 - br;
+        for (var iB = 0; iB < nB; iB++) braceYs.push(yb0 + (iB + 0.5) * (yb1 - yb0) / nB);
+      }
+      braceYs = braceYs.filter(function (y) { return y - br > p.wallMm + 5 && y + br < yS0 - 3; });
+      braceYs.forEach(function (y) { bTiers.forEach(function (t) { SY.push(y - t.hw, y + t.hw); }); });
+    }
     var xF = xs + 4 + p.wallMm;             // furthest a gap fill reaches (only where the rim is within 4 mm)
     [ph, xs, rib / 2, xs - rib, xs - 0.5, xF].forEach(function (v) { SX.push(v, -v); });
     SX = SX.map(function (v) { return Math.round(v * S); });
@@ -1055,7 +1131,7 @@
         filled.push(sg > 0 ? 'right' : 'left');
         return;
       }
-      tieBands.forEach(function (tb) {
+      if (p.neckBlockRibs) tieBands.forEach(function (tb) {
         var piece = pieceAt(inter(rect(Math.min(sg * (xs - 0.5), sg * 400), tb[0], Math.max(sg * (xs - 0.5), sg * 400), tb[1]), O), sg * (xs - 0.25), (tb[0] + tb[1]) / 2);
         ties = ties.concat(piece);
       });
@@ -1073,6 +1149,164 @@
         m = mutualSplit(blockFoot, ties); blockFoot = m[0]; ties = m[1];
       }
     })();
+    // ---- keep-outs for braces and tabs: neck block, ties, access ring
+    var ringEarly = [];
+    if (p.accessPanel) ringEarly = offset([toPath(roundedRect(0, clamp(p.accessPos, 0.1, 0.9) * L, p.accessWidthMm, p.accessLengthMm, p.accessCornerMm, 10))],
+      p.coverThicknessMm + p.accessRingMm);
+    function inside(paths, x, y) {
+      var pt = { X: Math.round(x * S), Y: Math.round(y * S) }, w = 0;
+      paths.forEach(function (pp) { if (ClipperLib.Clipper.PointInPolygon(pt, pp) !== 0) w += ClipperLib.Clipper.Area(pp) > 0 ? 1 : -1; });
+      return w > 0;
+    }
+    // x intervals of a horizontal line inside a region (mm paths, even-odd)
+    function lineIntervals(pathsMm, y) {
+      var xs = [];
+      pathsMm.forEach(function (pp) {
+        for (var i = 0; i < pp.length; i++) {
+          var a = pp[i], b = pp[(i + 1) % pp.length];
+          if ((a[1] > y) === (b[1] > y)) continue;
+          xs.push(a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]));
+        }
+      });
+      xs.sort(function (m, n) { return m - n; });
+      var out = [];
+      for (var i = 0; i + 1 < xs.length; i += 2) out.push([xs[i], xs[i + 1]]);
+      return out;
+    }
+    function interIntervals(A, B) {
+      var out = [];
+      A.forEach(function (a) { B.forEach(function (b) { var lo = Math.max(a[0], b[0]), hi = Math.min(a[1], b[1]); if (hi > lo) out.push([lo, hi]); }); });
+      return out;
+    }
+
+    // ---- ladder braces: segments between the rim and any keep-out
+    var braceSegs = [];
+    if (bOn && braceYs.length) {
+      var Kb = offset(union(blockFoot, ties, ringEarly), 3);
+      var freeMm = pathsToMm(diff(I, Kb));
+      braceYs.forEach(function (yb) {
+        var iv = null;
+        for (var q = 0; q <= 8; q++) {
+          var li = lineIntervals(freeMm, yb - br + bw * q / 8);
+          iv = iv === null ? li : interIntervals(iv, li);
+        }
+        (iv || []).forEach(function (r) {
+          if (r[1] - r[0] < 30) return;
+          // an end is at the rim unless a keep-out (neck block, ties, access
+          // ring) is just past it anywhere across the brace's width
+          function clearOfKeep(x) { for (var q2 = 0; q2 <= 8; q2++) if (inside(Kb, x, yb - br + bw * q2 / 8)) return false; return true; }
+          braceSegs.push({ y: yb, x0: r[0], x1: r[1], rim0: clearOfKeep(r[0] - 2), rim1: clearOfKeep(r[1] + 2) });
+        });
+      });
+    }
+    // brace footprint at height d above the floor
+    function braceAt(d) {
+      var parts = [];
+      braceSegs.forEach(function (g) {
+        var xm = (g.x0 + g.x1) / 2, a = (g.x1 - g.x0) / 2;
+        bTiers.forEach(function (t) {
+          var q = d + t.tau, x0, x1;
+          if (q > bH) return;
+          if (q <= bEnd) { x0 = g.rim0 ? g.x0 - 20 : g.x0; x1 = g.rim1 ? g.x1 + 20 : g.x1; }
+          else { var X = a * Math.sqrt(Math.max(0, 1 - (q - bEnd) / (bH - bEnd))); if (X < 0.3) return; x0 = xm - X; x1 = xm + X; }
+          parts = parts.concat(rect(x0, g.y - t.hw, x1, g.y + t.hw));
+        });
+      });
+      return parts.length ? inter(union(parts), I) : [];
+    }
+
+    // ---- screw-on top: tabs round the rim, under the glue shelf
+    var tabs = [], tabShapes = [];
+    var nTaperAll = Math.max(1, Math.ceil((tabC + tabR - 0.2) / STEP)); // the last level reaches <= 0.2 mm past the rim face
+    if (tabOn) {
+      var Imain = pathsToMm(I).filter(function (pp) { var a = 0; for (var i = 0; i < pp.length; i++) { var u = pp[i], v = pp[(i + 1) % pp.length]; a += u[0] * v[1] - v[0] * u[1]; } return a > 0; })
+        .sort(function (m, n) { return n.length - m.length; })[0];
+      var keep = [].concat(blockFoot, ties, ringEarly);
+      if (braceSegs.length) braceSegs.forEach(function (g) { keep = keep.concat(rect(g.x0 - 25, g.y - br, g.x1 + 25, g.y + br)); });
+      var Kt = offset(union(keep), 2);
+      // arc-length samples of the rim's inside face
+      var cum = [0];
+      for (var i = 1; i <= Imain.length; i++) { var u = Imain[i - 1], v = Imain[i % Imain.length]; cum.push(cum[i - 1] + Math.hypot(v[0] - u[0], v[1] - u[1])); }
+      var per = cum[Imain.length];
+      function at(sv) {
+        sv = ((sv % per) + per) % per;
+        var j = 0; while (j + 1 < cum.length && cum[j + 1] < sv) j++;
+        var u = Imain[j], v = Imain[(j + 1) % Imain.length], f = (sv - cum[j]) / Math.max(1e-9, cum[j + 1] - cum[j]);
+        return [u[0] + (v[0] - u[0]) * f, u[1] + (v[1] - u[1]) * f];
+      }
+      // tab at arc length sv, in the rim's local frame (t along the
+      // inside face, n in from it): a pad from inside the wall to a round
+      // end round the hole. Its vertices sit at the trim distances
+      // n_k = tabC + tabR - k * STEP, so trimming it for the 45-degree
+      // underside (level k keeps n <= n_k) reuses exactly the same points
+      // at every level (no booleans, no rounding differences).
+      function tabShape(sv, k) {
+        var F = at(sv), A = at(sv - 4), B2 = at(sv + 4), tx = B2[0] - A[0], ty = B2[1] - A[1], tl = Math.hypot(tx, ty) || 1;
+        tx /= tl; ty /= tl;
+        var nx = -ty, ny = tx, E = Math.min(1.5, p.wallMm / 2), R = tabR;
+        var C = [F[0] + tabC * nx, F[1] + tabC * ny];
+        var ns = [];
+        for (var j = nTaperAll; j >= 0; j--) { var nv = tabC + R - j * STEP; if (nv > -E + 0.2) ns.push(nv); }
+        ns = ns.filter(function (nv) { return nv <= tabC + R - k * STEP + 1e-9; });
+        function w(nv) { return nv <= tabC ? R : Math.sqrt(Math.max(0, R * R - (nv - tabC) * (nv - tabC))); }
+        function pt(nv, tv) { return [F[0] + nv * nx + tv * tx, F[1] + nv * ny + tv * ty]; }
+        var q = [pt(-E, -R), pt(-E, R)];
+        ns.forEach(function (nv) { q.push(pt(nv, w(nv))); });
+        for (var i = ns.length - 1; i >= 0; i--) if (w(ns[i]) > 1e-9) q.push(pt(ns[i], -w(ns[i])));
+        var rp = toPath(q); if (ClipperLib.Clipper.Area(rp) < 0) rp.reverse();
+        return { C: C, reg: [rp] };
+      }
+      function okAt(sv) {
+        var t0 = tabShape(sv, 0);
+        if (areaMm2(inter(t0.reg, Kt)) > 0.01) return null;
+        if (areaMm2(diff(t0.reg, offset(O, -0.3))) > 0.01) return null;
+        if (areaMm2(diff(circle(t0.C[0], t0.C[1], tabR + 0.3, 32), I)) > 0.01) return null;
+        // its lowest level must sit on the rim wall (a tight curve can leave it hanging)
+        if (areaMm2(diff(tabShape(sv, nTaperAll).reg, ringGrown)) > 0.005) return null;
+        return t0;
+      }
+      var ringGrown = offset(diff(O, I), STEP - 0.05);
+      var nTab = Math.round(p.topScrewCount) > 0 ? Math.min(24, Math.round(p.topScrewCount)) : clamp(Math.round(per / 110), 6, 10);
+      var stepS = 2, valid = [];
+      for (var sv = 0; sv < per; sv += stepS) valid.push(okAt(sv) ? sv : null);
+      var best = null;
+      for (var off = 0; off < per / nTab; off += per / nTab / 24) {
+        var pick = [], cost = 0;
+        for (var k2 = 0; k2 < nTab; k2++) {
+          var target = off + k2 * per / nTab, got = null;
+          for (var dlt = 0; dlt <= per / nTab / 2 && got === null; dlt += stepS) {
+            [target + dlt, target - dlt].forEach(function (cand) {
+              if (got !== null) return;
+              var ci = Math.round((((cand % per) + per) % per) / stepS) % valid.length;
+              if (valid[ci] !== null && pick.every(function (q) { var dd = Math.abs(q - valid[ci]); return Math.min(dd, per - dd) > 2 * tabR + 12; })) got = valid[ci];
+            });
+            cost += 1;
+          }
+          if (got !== null) pick.push(got); else cost += 1000;
+        }
+        if (!best || pick.length > best.pick.length || (pick.length === best.pick.length && cost < best.cost)) best = { pick: pick, cost: cost };
+      }
+      tabs = best ? best.pick.sort(function (m, n) { return m - n; }) : [];
+      if (tabs.length < nTab) warnings.push('Only ' + tabs.length + ' of ' + nTab + ' top screw tabs fit round the rim (the neck block, braces and access ring are in the way).');
+      // one shape per level: full size, then reaching 0.4 mm less far in
+      // from the rim each step down (45 degrees); tabs are spaced apart,
+      // so each level is just their paths side by side
+      var nTaper = nTaperAll, tabSv = tabs;
+      for (var kk = 0; kk <= nTaper; kk++) {
+        var regs = [];
+        tabSv.forEach(function (sv) { regs = regs.concat(tabShape(sv, kk).reg); });
+        tabShapes.push(regs);
+      }
+      tabs = tabSv.map(function (sv) { var c = tabShape(sv, 0).C; return { s: sv, x: c[0], y: c[1] }; });
+      // the tabs cross the rim's inside face and the shelf steps: split
+      // all levels in one go, so the shared edges get the same points
+      var allT = [].concat.apply([], tabShapes), m2 = mutualSplit(I, allT);
+      I = m2[0]; allT = m2[1];
+      for (var q2 = 0; q2 < cav.length; q2++) { m2 = mutualSplit(cav[q2], allT); cav[q2] = m2[0]; allT = m2[1]; }
+      var at0 = 0;
+      tabShapes = tabShapes.map(function (ts) { var r = allT.slice(at0, at0 + ts.length); at0 += ts.length; return r; });
+    }
+
     // cells under the pocket floor plate
     var U = inter(pocket, I);
     var bosses = [];
@@ -1124,6 +1358,15 @@
     S_(zShelf, D, ring);                                   // wall round the top panel
     S_(0, zShelf, blockFoot);                              // neck block shell
     S_(0, tieTop, ties);                                   // low ties to the rim
+    var nBL = bOn ? Math.round(bH / bs) : 0;
+    for (k = 0; k < nBL && braceSegs.length; k++) S_(p.floorMm + k * bs, p.floorMm + (k + 1) * bs, braceAt((k + 0.5) * bs));
+    if (tabOn && tabs.length) {
+      S_(zShelf - tabDepth, zShelf, tabShapes[0]);
+      for (k = 1; k < tabShapes.length; k++) S_(zShelf - tabDepth - k * STEP, zShelf - tabDepth - (k - 1) * STEP, tabShapes[k]);
+      var pil = [];
+      tabs.forEach(function (tb) { pil = pil.concat(circle(tb.x, tb.y, tScrew.pilotMm / 2, 20)); });
+      V_(zShelf - tabHole, D + 1, pil);
+    }
     V_(zF, D + 1, pocket);
     if (cellsOn) {
       V_(p.floorMm, zR0, V0);
@@ -1241,10 +1484,17 @@
       pocket: { lengthMm: pl, widthMm: 2 * ph, depthMm: pocketDepth, floorZ: zF, y0: yP0, y1: L, cornerRadiusMm: pr, outline: pathsToMm(pocket) },
       neckBlock: { x0: -xs, x1: xs, y0: yS0, y1: L, heightMm: zShelf, footprintMm: [2 * xs, L - yS0], plasticUnderPocketMm: zF,
         pocketWallMm: tw, pocketEndWallMm: ew, ribMm: rib, bossWallMm: p.bossWallMm, bossDiameterMm: 2 * bossR, pocketFloorMm: p.pocketFloorMm,
-        tieHeightMm: tieTop - p.floorMm, ties: ties.length, filledSides: filled,
+        ribs: p.neckBlockRibs, tieHeightMm: tieTop - p.floorMm, ties: ties.length, filledSides: filled,
         footprintPieces: union(blockFoot, ties).filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0; }).length,
         cells: cellsOn ? { count: V0.filter(function (pp) { return ClipperLib.Clipper.Area(pp) > 0; }).length, bottomZ: p.floorMm, roofStartZ: zR0, topZ: zCellTop } : null },
       volume: { totalCm3: volTot / 1000, neckBlockCm3: volBlock / 1000 },
+      braces: bOn && braceSegs.length ? { count: braceYs.length, positionsMm: braceYs, positionsPct: braceYs.map(function (y) { return 100 * y / L; }),
+        widthMm: bw, heightMm: bH, endHeightMm: bEnd, crownRadiusMm: br, stepMm: bs, profile: 'parabolic, rounded crown',
+        segments: braceSegs.map(function (g) { return { y: g.y, x0: g.x0, x1: g.x1, ends: [g.rim0 ? 'rim' : 'stops short', g.rim1 ? 'rim' : 'stops short'] }; }) } : null,
+      screwTop: tabOn && tabs.length ? { count: tabs.length, screws: tabs.map(function (tb) { return { x: tb.x, y: tb.y }; }), size: p.topScrewSize, head: p.topScrewHead,
+        pilotMm: tScrew.pilotMm, clearanceMm: tScrew.clearanceMm, headMm: p.topScrewHead === 'flat' ? tScrew.flatHeadMm : tScrew.panHeadMm,
+        lengthIn: tScrew.lengthIn, bossMm: 2 * tabR, holeCentreInMm: tabC, holeDepthMm: tabHole, tabDepthMm: tabDepth, tabBottomZ: tabBottom,
+        sizes: TOP_SCREWS } : null,
       neckScrews: { holes: holes.map(function (h) { return { x: h[0], y: h[1] }; }), holeMm: p.neckScrewHoleMm, wells: wells,
         wellTopZ: wells ? zWell : null, wellDiameterMm: p.wellDiameterMm, stack: stackMm, lengthMm: screwMm, lengthIn: screwIn,
         note: wells ? 'Washers or ferrules sit at the top of each well, ' + p.wellFloorMm + ' mm of block under the pocket floor.'
@@ -1327,7 +1577,8 @@
   // 1:1 SVG / DXF of a panel outline (mm). Outer edges and the pocket
   // notch are one closed cut path.
   // ------------------------------------------------------------------
-  function panelSVG(outlineMm, title) {
+  function panelSVG(outlineMm, title, marksMm) {
+    marksMm = marksMm || [];
     var b = [Infinity, Infinity, -Infinity, -Infinity];
     outlineMm.forEach(function (pp) { pp.forEach(function (q) {
       b[0] = Math.min(b[0], q[0]); b[1] = Math.min(b[1], q[1]); b[2] = Math.max(b[2], q[0]); b[3] = Math.max(b[3], q[1]);
@@ -1343,17 +1594,19 @@
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + w.toFixed(3) + 'mm" height="' + h.toFixed(3) + 'mm" viewBox="0 0 ' + w.toFixed(3) + ' ' + h.toFixed(3) + '">\n' +
       '  <title>' + (title || 'panel') + ' — 1:1, millimetres</title>\n' +
       '  <path d="' + d + '" fill="none" stroke="#000" stroke-width="0.2"/>\n' +
+      (marksMm.length ? '  <path d="' + marksMm.map(function (pp) { return 'M' + pp.map(function (q) { return (q[0] - b[0] + m).toFixed(3) + ' ' + (b[3] - q[1] + m).toFixed(3); }).join(' L') + ' Z'; }).join(' ') + '" fill="none" stroke="#06c" stroke-width="0.2"/>\n' : '') +
       '  <path d="M' + bar + '" fill="none" stroke="#c00" stroke-width="0.4"/>\n' +
       '  <text x="' + m + '" y="' + (h - 8) + '" font-size="4" font-family="sans-serif" fill="#c00">100 mm check bar — ' + (title || '') + ' — ' + (b[2] - b[0]).toFixed(1) + ' × ' + (b[3] - b[1]).toFixed(1) + ' mm</text>\n' +
       '</svg>\n';
   }
 
-  function panelDXF(outlineMm) {
+  function panelDXF(outlineMm, marksMm) {
     var s = ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES'];
-    outlineMm.forEach(function (pp) {
+    outlineMm.map(function (pp) { return [pp, 'CUT']; }).concat((marksMm || []).map(function (pp) { return [pp, 'ENGRAVE']; })).forEach(function (e) {
+      var pp = e[0];
       for (var i = 0; i < pp.length; i++) {
         var a = pp[i], b = pp[(i + 1) % pp.length];
-        s.push('0', 'LINE', '8', 'CUT', '10', a[0].toFixed(4), '20', a[1].toFixed(4), '30', '0', '11', b[0].toFixed(4), '21', b[1].toFixed(4), '31', '0');
+        s.push('0', 'LINE', '8', e[1], '10', a[0].toFixed(4), '20', a[1].toFixed(4), '30', '0', '11', b[0].toFixed(4), '21', b[1].toFixed(4), '31', '0');
       }
     });
     s.push('0', 'ENDSEC', '0', 'EOF');
@@ -1362,7 +1615,7 @@
 
 
   var api = {
-    IN: IN, DEFAULTS: DEFAULTS, STYLES: STYLES, STYLE_KEYS: STYLE_KEYS, STYLE_FIELDS: STYLE_FIELDS,
+    IN: IN, DEFAULTS: DEFAULTS, TOP_SCREWS: TOP_SCREWS, STYLES: STYLES, STYLE_KEYS: STYLE_KEYS, STYLE_FIELDS: STYLE_FIELDS,
     STEP_MM: STEP, WALL_MIN_MM: WALL_MIN, FLOOR_MIN_MM: FLOOR_MIN_MM, OUTLINE_KEYS: OUTLINE_KEYS,
     styleParams: styleParams, matchStyle: matchStyle, withDefaults: withDefaults,
     shapeOf: shapeOf, halfWidth: halfWidth, outlinePoints: outlinePoints, tstyleProportions: tstyleProportions, flipZ: flipZ,

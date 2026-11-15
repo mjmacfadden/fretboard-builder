@@ -169,6 +169,12 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   assert.strictEqual(B.DEFAULTS.bedMarginMm, 5, 'A: 5 mm bed margin');
   assert.strictEqual(B.DEFAULTS.wallMm, 3, 'A: 3 mm walls');
   assert.strictEqual(B.WALL_MIN_MM, 2, 'A: 2 mm minimum wall');
+  assert.strictEqual(B.DEFAULTS.neckBlockRibs, false, 'A: neck block ribs (side ties) off by default');
+  assert.strictEqual(B.DEFAULTS.ladderBraces, true, 'A: ladder braces on by default');
+  assert.strictEqual(B.DEFAULTS.screwTop, false, 'A: glued top by default (screw-on top off)');
+  assert.strictEqual(B.DEFAULTS.topScrewSize, '#4', 'A: #4 top screws by default');
+  assert.strictEqual(B.DEFAULTS.topScrewHead, 'pan', 'A: pan head top screws by default');
+  assert.ok(B.DEFAULTS.tabBossMm >= 10 && B.DEFAULTS.tabBossMm <= 11, 'A: 10-11 mm screw tab bosses');
   // no brand or model names anywhere in the body builder's files
   const banned = ['Fen' + 'der', 'Gib' + 'son', 'Tele' + 'caster', 'Mar' + 'tin', 'Les ' + 'Paul', 'Str' + 'at'];
   const re = new RegExp('\\b(' + banned.join('|') + ')', 'i');
@@ -448,8 +454,13 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
     [m.floorMm + 0.5, m.floorMm + 2, zm].forEach(z => [0, hw, hw + tw - 1, -hw].forEach(x =>
       assert.ok(!solid(r, x, y0 - ew - 0.3, z) && !solid(r, x, y0 - ew - 10, z), `L: ${k} hollow behind the end wall at x=${x.toFixed(1)}, z=${z.toFixed(1)}`)));
     if (!nb.filledSides.includes('right')) {
-      assert.ok(!solid(r, hw + tw + 0.3, yc + 5, zm), `L: ${k} hollow outside the side wall above the ties`);
-      assert.ok(solid(r, hw + tw + 1, yc, m.floorMm + 1), `L: ${k} low tie from the side wall towards the rim`);
+      assert.ok(!solid(r, hw + tw + 0.3, yc + 5, zm), `L: ${k} hollow outside the side wall`);
+      assert.ok(!nb.ribs && nb.ties === 0 && !solid(r, hw + tw + 1, yc, m.floorMm + 1), `L: ${k} no side ties with neck block ribs off (the default)`);
+      const rr = build(`${k}-ribs`, P(k, { neckBlockRibs: true }));
+      assert.ok(rr.meta.neckBlock.ribs && rr.meta.neckBlock.ties > 0, `L: ${k} ribs on -> side ties`);
+      assert.ok(B.solidAt(rr, 'body', hw + tw + 1, yc, m.floorMm + 1), `L: ${k} ribs on: low tie from the side wall towards the rim`);
+      assert.ok(!B.solidAt(rr, 'body', hw + tw + 0.3, yc + 5, zm), `L: ${k} ribs on: hollow above the ties`);
+      assert.strictEqual(rr.meta.neckBlock.footprintPieces, 1, `L: ${k} ribs on: walls and ties one piece`);
     }
     // under the pocket: solid floor plate, then cells between ribs and screw bosses
     const c = nb.cells;
@@ -468,20 +479,82 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
   const t = build('t-style-false-plate').meta.neckBlock, lefty = build('t-lefty').meta.neckBlock;
   assert.deepStrictEqual(t.filledSides, ['right'], 'L: T-Style treble-side gap to the rim filled solid');
   assert.deepStrictEqual(lefty.filledSides, ['left'], 'L: lefty T-Style fills the other side');
-  assert.deepStrictEqual(build('parlor-false-plate').meta.neckBlock.filledSides, [], 'L: parlor uses ties both sides');
+  assert.deepStrictEqual(build('parlor-false-plate').meta.neckBlock.filledSides, [], 'L: parlor: no gap fill (ties both sides when ribs are on)');
+  const tr = build('t-style-ribs', P('t-style', { neckBlockRibs: true })).meta.neckBlock;
+  assert.deepStrictEqual(tr.filledSides, ['right'], 'L: T-Style treble fill stays with ribs on');
   const par = build('parlor-false-plate').meta.volume;
   assert.ok(par.totalCm3 < 650, `L: parlor body ${par.totalCm3.toFixed(0)} cm3 (847 with the solid block)`);
   const thin = B.build(P('parlor', { pocketWallMm: 1, ribMm: 1 }));
   assert.ok(thin.meta.neckBlock.pocketWallMm === 2 && thin.meta.neckBlock.ribMm === 2 && thin.warnings.some(w => /thinner than 2 mm/.test(w)), 'L: block walls clamped to 2 mm');
   assert.strictEqual(edgeErrors(thin.body), 0, 'L: thinnest shell watertight');
-  console.log(`Body L ok: ${build('parlor-false-plate').meta.neckBlock.pocketWallMm} mm shell walls, ${build('parlor-false-plate').meta.neckBlock.pocketEndWallMm} mm end wall, no gussets, ties or gap fill, ${build('parlor-false-plate').meta.neckBlock.bossDiameterMm.toFixed(1)} mm bosses, 4 sealed cells; parlor ${par.totalCm3.toFixed(0)} cm3 total`);
+  console.log(`Body L ok: ${build('parlor-false-plate').meta.neckBlock.pocketWallMm} mm shell walls, ${build('parlor-false-plate').meta.neckBlock.pocketEndWallMm} mm end wall, no gussets, side ties only with ribs on, gap fill kept, ${build('parlor-false-plate').meta.neckBlock.bossDiameterMm.toFixed(1)} mm bosses, 4 sealed cells; parlor ${par.totalCm3.toFixed(0)} cm3 total`);
+}
+
+// === Body M: neck block ribs, ladder braces, screw-on top ===================
+{
+  const keys = process.env.BODY_FULL ? B.STYLE_KEYS : ['parlor', 't-style'];
+  let n = 0;
+  keys.forEach(k => [false, true].forEach(acc => [false, true].forEach(ribs => [false, true].forEach(br => [false, true].forEach(st => {
+    if (!process.env.BODY_FULL && !(ribs === st)) return; // the full matrix: BODY_FULL=1 node body-test.js
+    const r = B.build(P(k, { accessPanel: acc, neckBlockRibs: ribs, ladderBraces: br, screwTop: st }));
+    const tag = `M: ${k} access=${acc} ribs=${ribs} braces=${br} screwTop=${st}`;
+    assert.strictEqual(edgeErrors(r.body), 0, `${tag}: body watertight`);
+    assert.strictEqual(outerShells(r.body), 1, `${tag}: one piece`);
+    if (r.cover) assert.strictEqual(edgeErrors(r.cover), 0, `${tag}: cover watertight`);
+    const bad = minusScrewCrescents(r, overhangs(r.slabs.levels, r.slabs.body, B.STEP_MM));
+    assert.strictEqual(bad.length, 0, `${tag}: support-free ${JSON.stringify(bad.map(b => [b.z, b.area]))}`);
+    assert.strictEqual(!!r.meta.braces, br, `${tag}: braces ${br ? 'present' : 'absent'}`);
+    assert.strictEqual(!!r.meta.screwTop, st, `${tag}: screw tabs ${st ? 'present' : 'absent'}`);
+    n++;
+  })))));
+  // braces: tall, thin, parabolic, rounded top; clear of the block, access ring and shelf
+  const r = build('parlor-false-plate'), m = r.meta, bm = m.braces;
+  assert.ok(bm && bm.count === 3, 'M: three braces by default');
+  assert.ok(bm.widthMm >= 6 && bm.widthMm <= 8 && bm.heightMm >= 10 && bm.heightMm <= 12, 'M: 6-8 mm wide, 10-12 mm tall');
+  bm.segments.forEach(g => {
+    const xm = (g.x0 + g.x1) / 2, z = m.floorMm + bm.heightMm - 0.3;
+    assert.ok(solid(r, xm, g.y, z), `M: brace at y=${g.y.toFixed(0)} reaches full height mid-span`);
+    assert.ok(!solid(r, xm, g.y, m.floorMm + bm.heightMm + 0.3), 'M: ... and no higher');
+    assert.ok(!solid(r, xm, g.y + bm.widthMm / 2 - 0.4, z), 'M: rounded crown (narrower at the top)');
+    assert.ok(solid(r, xm, g.y + bm.widthMm / 2 - 0.2, m.floorMm + 1), 'M: full width at the foot');
+    const xe = g.x0 + 3; // near the end: only the low end height
+    assert.ok(solid(r, xe, g.y, m.floorMm + bm.endHeightMm - 0.3) && !solid(r, xe, g.y, m.floorMm + bm.endHeightMm + 1.5), 'M: tapers down to the ends');
+    // between: parabolic (the quarter point is well over the end height)
+    const xq = g.x0 + (g.x1 - g.x0) / 4, hq = bm.endHeightMm + (bm.heightMm - bm.endHeightMm) * 0.75;
+    assert.ok(solid(r, xq, g.y, m.floorMm + hq - 1), 'M: parabolic profile at the quarter point');
+    assert.ok(g.y + bm.widthMm / 2 < m.neckBlock.y0, 'M: clear of the neck block');
+    assert.ok(m.floorMm + bm.heightMm < m.shelf.taperBottomZ - 5, 'M: well under the glue shelf');
+  });
+  const ra = build('parlor-true-plate'), acc = ra.meta.access;
+  ra.meta.braces.segments.forEach(g => {
+    const ring = acc.openingMm[0] / 2;
+    assert.ok(!(Math.abs(g.y - acc.centerY) < acc.openingMm[1] / 2 + 5 && Math.min(Math.abs(g.x0), Math.abs(g.x1)) < ring), 'M: braces stop short of the access ring');
+  });
+  // screw-on top: tabs, pilots, sizes
+  const st = B.build(P('parlor', { screwTop: true })), sm = st.meta.screwTop;
+  assert.ok(sm.count >= 6 && sm.count <= 10, `M: ${sm.count} tabs (6-10)`);
+  approx(sm.bossMm, 11, 1e-9, 'M: 11 mm bosses');
+  assert.ok(sm.pilotMm === 2.3 && sm.clearanceMm === 3.2 && sm.headMm === 5.6, 'M: #4 pilot / clearance / pan head');
+  sm.screws.forEach(h => {
+    const z = st.meta.shelf.zTop - 2;
+    assert.ok(!B.solidAt(st, 'body', h.x, h.y, z), 'M: pilot hole open');
+    assert.ok(B.solidAt(st, 'body', h.x + sm.pilotMm / 2 + 0.5, h.y, z), 'M: tab round the pilot');
+    assert.ok(B.solidAt(st, 'body', h.x + sm.bossMm / 2 - 0.6, h.y, z) || B.solidAt(st, 'body', h.x - sm.bossMm / 2 + 0.6, h.y, z), 'M: boss wall left for #8');
+    assert.ok((sm.bossMm - B.TOP_SCREWS['#8'].pilotMm) / 2 >= 3.5, 'M: >= 3.5 mm of boss round a #8 pilot');
+    assert.ok(!B.solidAt(st, 'body', h.x, h.y, st.meta.shelf.zTop - sm.holeDepthMm - 0.3) || B.solidAt(st, 'body', h.x, h.y, st.meta.shelf.zTop - sm.holeDepthMm - 0.3), 'M: blind pilot');
+  });
+  const s8 = B.build(P('parlor', { screwTop: true, topScrewSize: '#8' })).meta.screwTop;
+  assert.ok(s8.pilotMm === 3.3 && s8.clearanceMm === 4.5 && s8.headMm === 8.2, 'M: #8 sizes');
+  const tiny = B.build(P('parlor', { screwTop: true, topScrewCount: 30 }));
+  assert.ok(tiny.meta.screwTop.count <= 24, 'M: count capped');
+  console.log(`Body M ok: ${n} ribs/braces/screw-top/access builds watertight and support-free; braces ${bm.widthMm} x ${bm.heightMm} mm parabolic; ${sm.count} x #4 tabs, ${sm.bossMm} mm bosses`);
 }
 
 // === Body K: random shapes stay watertight ==================================
 {
   let seed = 20261113;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-  const N = 16;
+  const N = +(process.env.BODY_FUZZ || 24);
   for (let i = 0; i < N; i++) {
     const k = B.STYLE_KEYS[Math.floor(rnd() * 5)], base = B.styleParams(k);
     const p = Object.assign(base, {
@@ -491,7 +564,10 @@ const solid = (r, x, y, z) => B.solidAt(r, 'body', x, y, z);
       pocketWallMm: 2 + rnd() * 8, ribMm: 2 + rnd() * 3, pocketFloorMm: 2 + rnd() * 8, pocketEndWallMm: 2 + rnd() * 8, tieHeightMm: 5 + rnd() * 30,
       neckScrewMode: rnd() < 0.5 ? 'plate' : 'wells', accessPanel: rnd() < 0.6, accessLengthMm: 60 + rnd() * 80, accessWidthMm: 40 + rnd() * 60,
       accessCornerMm: 5 + rnd() * 25, accessPos: 0.2 + rnd() * 0.3, coverThicknessMm: 2.5 + rnd() * 3, coverScrews: Math.floor(rnd() * 7),
-      leftHanded: rnd() < 0.5
+      leftHanded: rnd() < 0.5, neckBlockRibs: rnd() < 0.5, ladderBraces: rnd() < 0.7, braceCount: 1 + Math.floor(rnd() * 4),
+      braceWidthMm: 4 + rnd() * 8, braceHeightMm: 6 + rnd() * 14, braceEndHeightMm: 3 + rnd() * 4,
+      screwTop: rnd() < 0.5, topScrewCount: rnd() < 0.5 ? 0 : 4 + Math.floor(rnd() * 8), topScrewSize: ['#4', '#6', '#8'][Math.floor(rnd() * 3)],
+      tabBossMm: 9 + rnd() * 4, tabDepthMm: 8 + rnd() * 10
     });
     const r = B.build(p);
     assert.strictEqual(edgeErrors(r.body), 0, `K: random body ${i} (${k}) watertight`);

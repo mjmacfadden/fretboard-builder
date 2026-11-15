@@ -105,6 +105,30 @@
     </label>
 
     <label class="check">
+      <input type="checkbox" id="neckBlockRibs">
+      Neck block ribs <span class="hint">(low ties from the pocket walls out to the rim)</span>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" id="ladderBraces" checked>
+      Ladder braces <span class="hint">(across the inside of the back floor)</span>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" id="screwTop">
+      Screw-on top <span class="hint">(removable: screw tabs round the rim instead of glue)</span>
+    </label>
+
+    <label id="screw-size-row" hidden>
+      Top screws <span class="hint">(coarse-thread wood / plastic screws, no inserts)</span>
+      <select id="topScrewSize">
+        <option value="#4" selected>#4 (start here)</option>
+        <option value="#6">#6 (re-drilled after #4 wears)</option>
+        <option value="#8">#8 (re-drilled after #6 wears)</option>
+      </select>
+    </label>
+
+    <label class="check">
       <input type="checkbox" id="accessPanel">
       Back access panel <span class="hint">(opening in the back with a flush cover plate)</span>
     </label>
@@ -165,12 +189,37 @@
         <span class="row"><input type="number" id="pocketEndWallMm" value="8" min="2" max="20" step="0.5"><span class="unit">mm</span></span></label>
       <label>Plate under the pocket floor
         <span class="row"><input type="number" id="pocketFloorMm" value="6" min="2" max="20" step="0.5"><span class="unit">mm</span></span></label>
-      <label>Ribs and side ties
+      <label>Ribs and side ties <span class="hint">(side ties only with “Neck block ribs” on)</span>
         <span class="row"><input type="number" id="ribMm" value="3" min="2" max="10" step="0.5"><span class="unit">mm</span></span></label>
       <label>Screw boss wall <span class="hint">(round each neck screw hole)</span>
         <span class="row"><input type="number" id="bossWallMm" value="3" min="2" max="10" step="0.5"><span class="unit">mm</span></span></label>
       <label>Side ties to the rim <span class="hint">(height above the floor)</span>
         <span class="row"><input type="number" id="tieHeightMm" value="20" min="5" max="80" step="1"><span class="unit">mm</span></span></label>
+
+      <h3>Ladder braces</h3>
+      <label>How many <span class="hint">(spread evenly from the tail to the neck block)</span>
+        <span class="row"><input type="number" id="braceCount" value="3" min="0" max="8" step="1"></span></label>
+      <label>Positions <span class="hint">(optional: centres as % of the length from the tail, e.g. 25, 45, 65)</span>
+        <span class="row"><input type="text" id="bracePositions" value="" placeholder="auto"></span></label>
+      <label>Brace width
+        <span class="row"><input type="number" id="braceWidthMm" value="7" min="3" max="15" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Height at the centre <span class="hint">(parabolic profile, rounded top)</span>
+        <span class="row"><input type="number" id="braceHeightMm" value="12" min="3" max="40" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Height at the ends
+        <span class="row"><input type="number" id="braceEndHeightMm" value="4.5" min="2" max="20" step="0.5"><span class="unit">mm</span></span></label>
+
+      <h3>Screw-on top</h3>
+      <label>Number of screws <span class="hint">(0 = automatic, 6–10 by body size)</span>
+        <span class="row"><input type="number" id="topScrewCount" value="0" min="0" max="24" step="1"></span></label>
+      <label>Screw head
+        <select id="topScrewHead">
+          <option value="pan" selected>Pan head (clearance hole; head circle marked)</option>
+          <option value="flat">Flat head (countersunk)</option>
+        </select></label>
+      <label>Tab boss diameter <span class="hint">(10–11 mm leaves room to re-drill #4 → #6 → #8)</span>
+        <span class="row"><input type="number" id="tabBossMm" value="11" min="8" max="16" step="0.5"><span class="unit">mm</span></span></label>
+      <label>Tab depth <span class="hint">(full size below the glue surface, then a 45° underside)</span>
+        <span class="row"><input type="number" id="tabDepthMm" value="12" min="6" max="30" step="1"><span class="unit">mm</span></span></label>
 
       <h3>Neck screws</h3>
       <label>Hole spacing across the neck
@@ -261,6 +310,8 @@
       <div><span class="k">Neck pocket</span><span class="v" id="pocket-out">—</span></div>
       <div><span class="k">Neck block</span><span class="v" id="block-out">—</span></div>
       <div><span class="k">Neck screws</span><span class="v" id="screws-out">—</span></div>
+      <div><span class="k">Ladder braces</span><span class="v" id="braces-out">—</span></div>
+      <div><span class="k">Screw-on top</span><span class="v" id="topscrews-out">—</span></div>
       <div><span class="k">Back access panel</span><span class="v" id="access-out">—</span></div>
       <div><span class="k">Overhangs</span><span class="v" id="overhang-out">—</span></div>
     </div>
@@ -272,8 +323,10 @@
         <li>Print the body <strong>back face down</strong>, open side up, as one part. No supports: the walls and the neck block go straight up, and the underside of the glue shelf is a 45° staircase (0.4 mm steps). With screw wells on, the flat round roof of each well is a short bridge.</li>
         <li>Material: <strong>PETG</strong> (or ASA) — it creeps less than PLA under string and screw load. 0.2 mm layers.</li>
         <li><strong>7 walls / perimeters</strong> (0.4 mm nozzle): the 3 mm rim and the shelf print fully solid. 6 top and bottom layers, so the 3 mm back floor is solid too.</li>
-        <li>Neck block: a ribbed shell (pocket walls, side ties, a plate under the pocket and screw bosses), so <strong>normal infill (15–25%)</strong> is fine — the 7 perimeters make its walls solid. The cells under the pocket are sealed and close at 45°, no supports.</li>
-        <li>Top: cut the ⅛″ ply from the top panel SVG/DXF (1:1, millimetres; check the 100 mm bar on a paper print first). It drops into the rim and sits on the shelf; the notch fits round the neck pocket. Glue it to the shelf and the top of the neck block (wood glue or epoxy), weighted flat.</li>
+        <li>Neck block: a ribbed shell (pocket walls, a plate under the pocket and screw bosses; side ties to the rim if “Neck block ribs” is on), so <strong>normal infill (15–25%)</strong> is fine — the 7 perimeters make its walls solid. The cells under the pocket are sealed and close at 45°, no supports.</li>
+        <li>Top: cut the ⅛″ ply from the top panel SVG/DXF (1:1, millimetres; check the 100 mm bar on a paper print first). It drops into the rim and sits on the shelf; the notch fits round the neck pocket. Glue it to the shelf and the top of the neck block (wood glue or epoxy), weighted flat — or screw it down if the screw-on top is on.</li>
+        <li>Ladder braces (on by default): tall, thin, with a parabolic rounded top; they print straight up from the floor in 0.5 mm steps that only ever get narrower, so no supports.</li>
+        <li>Screw-on top (if on): leave the glue off; screw down through the top into the tabs under the shelf with coarse-thread wood / plastic screws (#4 × ½″ pan head to start). When a hole wears, re-drill the tab for #6, then #8, and pick that size here so the top's holes match. The tabs' undersides are 45° tapers, no supports.</li>
         <li>Neck: drill pilot holes in the neck through the body's holes, then screw on from the back (through the back plate, or with washers / ferrules in the wells). Snug, not cranked.</li>
         <li>Access panel (if on): print the cover plate face down (the STL is the right way up). It drops into the bevelled recess flush with the back and is held by small screws into the ring round the opening.</li>
       </ul>

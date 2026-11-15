@@ -153,10 +153,11 @@ the fretboard builder.
     thicker, as nothing braces it from behind) from the back floor up to
     the shelf, so the top is glued to them too. Nothing runs tailward
     past the end wall;
-  - **low ties** (3 mm thick, 20 mm high) from each side wall out to the
-    rim, one where the corner round meets the side and one mid-pocket.
-    Where the rim comes within 4 mm of the wall (the T-Style treble side,
-    about 10 mm) that gap is filled solid instead;
+  - optional **neck block ribs** (off by default): low ties (3 mm thick,
+    20 mm high) from each side wall out to the rim, one where the corner
+    round meets the side and one mid-pocket. With them off the pocket walls
+    stand alone. Either way, where the rim comes within 4 mm of the wall
+    (the T-Style treble side, about 10 mm) that gap is filled solid;
   - under the pocket, a **6 mm solid plate** below the pocket floor. Beneath
     it, a centreline rib and a cross rib (3 mm) and a **boss round each
     neck screw hole** (3 mm wall: 10.6 mm across for the plate holes) run
@@ -166,9 +167,41 @@ the fretboard builder.
   - All of these are adjustable, with a 2 mm minimum. Each neck screw
     clamps back plate, back floor, boss, plate and neck in one straight
     line.
-  - Parlor body: about 570 cm³ of plastic (847 cm³ with the old solid
-    block).
-  - T-Style: about 489 cm³ (574 cm³ before).
+  - Plastic, with the defaults (braces on, ribs off, glued top): parlor
+    591 cm³, small dreadnought style 655, round 608, cigar-box style 561,
+    T-Style 520 cm³. (The parlor was 847 cm³ with the old solid block.)
+- **Ladder braces** (on by default) across the inside of the back floor, so
+  the 3 mm floor doesn't drum or flex: 3 by default, spread evenly from the
+  tail to the neck block (about 22%, 41% and 61% of the length), or at the
+  positions you list (% of the length from the tail). Each is **7 mm wide
+  and 12 mm tall at the centre**, falling along a **parabola** to 4.5 mm
+  where it meets the rim, with a **rounded (half-round) top edge**. They
+  are built in 0.5 mm slabs that only ever get narrower going up, so they
+  print floor-down with no supports. They stop 3 mm short of the neck block
+  (and its ties) and of the access panel's ring (a brace that would cross
+  the opening is split in two), and stay well under the glue shelf. Count,
+  positions, width, centre and end heights are adjustable. They add about
+  35–50 cm³.
+- **Screw-on top** (off by default; glue is the default): a removable top
+  held by coarse-thread wood / plastic (thread-forming) screws — no
+  heat-set inserts. **Screw tabs** stick out from the rim under the glue
+  shelf (6–10, by the size of the body, or the number you set), spaced
+  evenly round the rim and kept clear of the neck block, the braces and the
+  access ring. Each tab is an **11 mm boss** (10–11 mm leaves room to
+  re-drill as the threads wear: #4 → #6 → #8, still 3.85 mm of plastic
+  round a #8 pilot), its top flush with the glue surface, 12 mm deep, then
+  a **45° underside** back into the wall (0.4 mm steps), so no supports.
+  Default screw **#4 × ½″ pan head**. The screw-size setting changes the
+  pilot hole and the marks on the top panel:
+
+  | Screw | Pilot in the tab | Clearance in the top | Pan head Ø | Flat head Ø |
+  |---|---|---|---|---|
+  | #4 | 2.3 mm | 3.2 mm | 5.6 mm | 5.7 mm |
+  | #6 | 2.8 mm | 3.8 mm | 6.9 mm | 7.1 mm |
+  | #8 | 3.3 mm | 4.5 mm | 8.2 mm | 8.4 mm |
+
+  The top-panel SVG / DXF then has the clearance holes as cuts and the head
+  circles (or countersinks, with flat heads) as engrave marks.
 - **Neck pocket**: **2.75″ long × 1.5″ wide** (+0.15 mm fit each side),
   **¼″ (6.35 mm) radius** inner corners (set 0 for square), floor **0.9″
   below the top surface of the top**, open
@@ -208,7 +241,9 @@ each well is a short bridge — the only one. Glue the top to the shelf and
 the neck block, weighted flat.
 
 `node body-test.js` (also run by `node test.js`) checks every style with
-the access panel on and off and both screw modes: one watertight body on
+the access panel on and off and both screw modes, the ribs / braces /
+screw-on-top combinations (all of them for every style with
+`BODY_FULL=1`), the brace profile and keep-outs, the screw tabs and sizes: one watertight body on
 the bed (plus its sealed cells), the pocket size / corner radius / floor
 depth, the neck block's walls, ribs, bosses and cells, the shelf drop, width and
 45° taper, a slab-by-slab overhang audit (nothing more than one 0.4 mm step

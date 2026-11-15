@@ -18,9 +18,10 @@
     'pocketCornerMm', 'pocketWallMm', 'pocketEndWallMm', 'pocketFloorMm', 'ribMm', 'bossWallMm', 'tieHeightMm', 'neckScrewSpanXIn', 'neckScrewSpanYIn', 'neckScrewHoleMm',
     'plateThicknessMm', 'screwBiteMm', 'wellDiameterMm', 'wellFloorMm', 'accessLengthMm', 'accessWidthMm',
     'accessCornerMm', 'accessPos', 'coverThicknessMm', 'coverFitMm', 'accessRingMm', 'accessRingHeightMm',
-    'coverScrews', 'coverScrewHoleMm', 'coverScrewClearMm', 'bedMarginMm'];
-  var SELECT_FIELDS = ['neckScrewMode'];
-  var CHECK_FIELDS = ['accessPanel', 'fitBed', 'leftHanded'];
+    'coverScrews', 'coverScrewHoleMm', 'coverScrewClearMm', 'bedMarginMm', 'braceCount', 'braceWidthMm', 'braceHeightMm',
+    'braceEndHeightMm', 'topScrewCount', 'tabBossMm', 'tabDepthMm'];
+  var SELECT_FIELDS = ['neckScrewMode', 'topScrewSize', 'topScrewHead', 'bracePositions'];
+  var CHECK_FIELDS = ['accessPanel', 'fitBed', 'leftHanded', 'neckBlockRibs', 'ladderBraces', 'screwTop'];
 
   var styleEl = $('style');
   var shape = 'bouts';      // the current outline family (kept when you go Custom)
@@ -134,6 +135,18 @@
         a.cover.sizeMm[1].toFixed(1) + ' mm at the back face, ' + fmtMm(a.recessDepthMm) + ' deep with a 45° bevel seat; cover ' +
         fmtMm(a.cover.thicknessMm) + ' thick, ' + (a.screws.length ? a.screws.length + ' screws into the ring round the opening' : 'no screws')
       : (p.accessPanel ? 'left out (see the warning)' : 'off — the back is solid');
+    var bm = m.braces;
+    $('braces-out').textContent = bm
+      ? bm.count + ' across the back floor at ' + bm.positionsPct.map(function (v) { return v.toFixed(0) + '%'; }).join(', ') + ' of the length; ' +
+        fmtMm(bm.widthMm) + ' wide, ' + fmtMm(bm.heightMm) + ' tall at the centre falling to ' + fmtMm(bm.endHeightMm) + ' at the ends (parabolic, rounded top)' +
+        (bm.segments.some(function (g) { return g.ends.indexOf('stops short') >= 0; }) ? '; split round the access ring / neck block' : '')
+      : (p.ladderBraces ? 'left out (see the warning)' : 'off');
+    var stp = m.screwTop;
+    $('screw-size-row').hidden = !p.screwTop;
+    $('topscrews-out').textContent = stp
+      ? stp.count + ' × ' + stp.size + ' × ' + stp.lengthIn + '″ ' + stp.head + ' head wood / plastic screws into ' + stp.bossMm.toFixed(1) + ' mm tabs under the shelf; ' +
+        stp.pilotMm + ' mm pilot, ' + stp.holeDepthMm.toFixed(0) + ' mm deep; top panel ' + stp.clearanceMm + ' mm clearance holes, ' + stp.headMm + ' mm head ' + (stp.head === 'flat' ? 'countersink' : 'circle') + ' marked'
+      : (p.screwTop ? 'left out (see the warning)' : 'off — the top is glued');
     $('overhang-out').textContent = 'no supports: vertical walls, 45° staircases (steps of ' + m.overhang.stairStepMm.toFixed(2) + ' mm or less)' +
       (ns.wells ? ', plus the flat round roofs of the ' + ns.wellDiameterMm + ' mm wells (short bridges)' : '');
 
@@ -182,6 +195,18 @@
     return a.cover.outline.concat(holes);
   }
 
+  // top panel: outline + screw clearance holes (cut); head circles (engrave)
+  function circ(x, y, r) { var pts = []; for (var i = 0; i < 36; i++) pts.push([x + r * Math.cos(Math.PI * i / 18), y + r * Math.sin(Math.PI * i / 18)]); return pts; }
+  function topCut() {
+    var st = result.meta.screwTop, out = result.meta.topPanel.outline.slice();
+    if (st) st.screws.forEach(function (s) { out.push(circ(s.x, s.y, st.clearanceMm / 2)); });
+    return out;
+  }
+  function topMarks() {
+    var st = result.meta.screwTop;
+    return st ? st.screws.map(function (s) { return circ(s.x, s.y, st.headMm / 2); }) : [];
+  }
+
   // ---- events
   styleEl.addEventListener('change', function () { applyStyle(styleEl.value); });
   B.STYLE_FIELDS.forEach(function (k) {
@@ -198,8 +223,8 @@
   $('dl-body').addEventListener('click', function () { if (result) download(STLExport.trianglesToSTL(result.body), result.names.body); });
   // the cover prints outer face down; it is modelled that way
   $('dl-cover').addEventListener('click', function () { if (result && result.cover) download(STLExport.trianglesToSTL(result.cover), result.names.cover); });
-  $('dl-top-svg').addEventListener('click', function () { if (result) download(B.panelSVG(result.meta.topPanel.outline, 'Top panel'), result.names.topSvg, 'image/svg+xml'); });
-  $('dl-top-dxf').addEventListener('click', function () { if (result) download(B.panelDXF(result.meta.topPanel.outline), result.names.topDxf, 'application/dxf'); });
+  $('dl-top-svg').addEventListener('click', function () { if (result) download(B.panelSVG(topCut(), 'Top panel', topMarks()), result.names.topSvg, 'image/svg+xml'); });
+  $('dl-top-dxf').addEventListener('click', function () { if (result) download(B.panelDXF(topCut(), topMarks()), result.names.topDxf, 'application/dxf'); });
   $('dl-cover-svg').addEventListener('click', function () { if (result && result.cover) download(B.panelSVG(coverCut(), 'Cover plate (outer face)'), result.names.coverSvg, 'image/svg+xml'); });
   $('dl-cover-dxf').addEventListener('click', function () { if (result && result.cover) download(B.panelDXF(coverCut()), result.names.coverDxf, 'application/dxf'); });
 
