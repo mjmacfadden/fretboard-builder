@@ -1036,4 +1036,12 @@ function boundaryEdgeCount(tris) {
   console.log('S ok: T-Style / LP-Style presets build flat and watertight; picking one fills the form, editing its fields switches to Custom');
 }
 
+// === Body builder (body-geometry.js): its own suite, run here too =======
+// (skipped when the file isn't there, e.g. where only the fretboard
+// engine files are copied into another site)
+if (require('fs').existsSync(require('path').join(__dirname, 'body-test.js'))) {
+  console.log('');
+  require('./body-test.js');
+}
+
 console.log('\nALL GEOMETRY TESTS PASSED');
